@@ -44,6 +44,55 @@ Open:
 
 The server listens on `PORT` for HTTPS and `PORT + 1` for HTTP.
 
+## Run as a Service
+
+If you want the app to keep running after you close the shell, use the bundled `systemd` service workflow.
+
+Install/update the service:
+
+```bash
+cd /root/inventory-mail-generator
+sudo bash ./setup.sh
+```
+
+Install it and enable it at boot:
+
+```bash
+cd /root/inventory-mail-generator
+sudo bash ./setup.sh --enable-web
+```
+
+If dependencies are already installed and you only want to refresh the service files:
+
+```bash
+cd /root/inventory-mail-generator
+sudo bash ./install_web_service.sh
+```
+
+Useful service commands:
+
+```bash
+sudo systemctl start inventory-mail-generator
+sudo systemctl stop inventory-mail-generator
+sudo systemctl restart inventory-mail-generator
+sudo systemctl status inventory-mail-generator
+sudo journalctl -u inventory-mail-generator -f
+```
+
+Manual foreground runner:
+
+```bash
+cd /root/inventory-mail-generator
+sudo bash ./run_web_service.sh
+```
+
+Change the port for the foreground runner:
+
+```bash
+sudo PORT=3100 bash ./run_web_service.sh
+sudo bash ./run_web_service.sh --port 3100
+```
+
 ## Environment Variables
 
 Create `.env` from `.env.example` and fill in real values.
@@ -140,6 +189,12 @@ npm run dev
 
 # Start without watch mode
 npm start
+
+# Install/update the service
+sudo bash ./setup.sh
+
+# Enable service on boot
+sudo bash ./setup.sh --enable-web
 ```
 
 ## Notes

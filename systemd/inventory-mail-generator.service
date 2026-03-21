@@ -1,0 +1,18 @@
+[Unit]
+Description=Inventory Mail Generator Web App
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/inventory-mail-generator
+EnvironmentFile=-/etc/default/inventory-mail-generator
+ExecStart=/root/inventory-mail-generator/run_web_service.sh
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
