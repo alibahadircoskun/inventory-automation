@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventory Mail Generator</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<header class="header">
+  <div class="header-brand">
+    <div class="logo">IMG</div>
+    <h1>Inventory Mail Generator</h1>
+  </div>
+  <div class="header-actions">
+    <div class="header-user" id="headerUser"></div>
+    <div class="header-editor-actions" id="headerEditorActions" hidden>
+      <div class="save-indicator" id="saveIndicator"></div>
+      <button class="btn btn-ghost" onclick="App.backToSessions()" title="Taslaklar">
+        <span class="material-symbols-outlined" style="font-size:16px">arrow_back</span>
+        <span class="btn-label">Taslaklar</span>
+      </button>
+      <button class="btn btn-ghost" onclick="App.renameCurrentSession()" title="Adı Değiştir">
+        <span class="material-symbols-outlined" style="font-size:16px">edit</span>
+        <span class="btn-label">Adı Değiştir</span>
+      </button>
+      <button class="btn btn-ghost" onclick="App.resetForm()" title="Temizle">
+        <span class="material-symbols-outlined" style="font-size:16px">refresh</span>
+        <span class="btn-label">Temizle</span>
+      </button>
+      <button class="btn btn-accent2" onclick="Email.copyHTML()" title="HTML Kopyala">
+        <span class="material-symbols-outlined" style="font-size:16px">content_copy</span>
+        <span class="btn-label">HTML Kopyala</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- SESSION LIST VIEW -->
+<div class="sessions-view" id="sessionsView" style="display:none">
+  <div class="sessions-container">
+    <div class="sessions-header">
+      <h2>Taslaklar</h2>
+      <button class="btn btn-accent2" onclick="App.createSession()">
+        <span class="material-symbols-outlined" style="font-size:18px">add</span>
+        Yeni Taslak
+      </button>
+    </div>
+    <div id="sessionList"></div>
+  </div>
+</div>
+
+<!-- MAIN EDITOR VIEW -->
+<div class="main" id="editorView" style="display:none">
+  <!-- LEFT PANEL: INPUT -->
+  <div class="panel">
+    <textarea id="f_description" rows="3" hidden style="display:none"></textarea>
+    <div id="deviceList"></div>
+    <div style="margin-top:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="Devices.addDevice()" style="width:100%">
+        <span class="material-symbols-outlined" style="font-size:16px">add_circle_outline</span>
+        Cihaz Ekle
+      </button>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL: PREVIEW -->
+  <div class="preview-panel">
+    <div class="preview-topbar">
+      <div class="panel-title" style="margin:0">E-Posta Önizleme</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="Email.copyHTML()">
+          <span class="material-symbols-outlined" style="font-size:14px">content_copy</span>
+          HTML Kopyala
+        </button>
+      </div>
+    </div>
+    <div class="preview-frame">
+      <div class="preview-email-chrome">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <span>E-Posta Önizleme</span>
+      </div>
+      <div class="preview-content">
+        <div id="emailPreview"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CAMERA OVERLAY -->
+<div class="camera-overlay" id="cameraOverlay" style="display:none">
+  <div class="ocr-workspace">
+    <div class="ocr-header">
+      <div>
+        <div class="ocr-kicker" id="ocrHeaderKicker" style="display:none"></div>
+        <div class="ocr-header-title" id="ocrHeaderTitle">Metin Tanıma</div>
+      </div>
+      <button class="btn btn-ghost" onclick="OCR.closeCamera()">Kapat</button>
+    </div>
+
+    <div class="ocr-body">
+      <button class="ocr-queue-toggle" id="ocrQueueToggle" onclick="OCR.toggleQueueSheet()">
+        <span class="material-symbols-outlined">inventory_2</span>
+        <span id="ocrQueueToggleLabel">Kuyruk</span>
+        <span class="ocr-queue-toggle-count" id="ocrQueueToggleCount">0</span>
+      </button>
+      <div class="ocr-stage-panel">
+        <div class="ocr-source-switch">
+          <button class="btn btn-ghost" id="ocrSourceCamera" onclick="OCR.setSource('camera')">Kamera</button>
+          <button class="btn btn-ghost" id="ocrSourceGallery" onclick="OCR.setSource('gallery')">Galeri</button>
+        </div>
+
+        <div class="ocr-target-bar">
+          <div class="ocr-target-summary" id="ocrTargetSummary" style="display:none"></div>
+          <div class="ocr-destination" id="ocrBatchControls" style="display:none">
+            <label for="ocrDestinationSelect">Hedef Liste</label>
+            <select id="ocrDestinationSelect" onchange="OCR.setBatchDestination(this.value)"></select>
+          </div>
+        </div>
+
+        <div class="ocr-stage">
+          <div class="ocr-camera-stage" id="ocrCameraStage">
+            <div class="ocr-camera-frame" id="ocrCameraFrame">
+              <video id="cameraVideo" autoplay playsinline muted></video>
+              <img id="cameraStillPreview" alt="Yakalanan metin tanıma önizlemesi">
+              <div class="ocr-stage-placeholder" id="ocrStagePlaceholder"></div>
+              <div class="ocr-framing-guide">
+                <div class="ocr-framing-guide-label">Etiketi çerçeve içine yerleştirin</div>
+              </div>
+              <div class="ocr-stage-status" id="ocrStageStatus"></div>
+            </div>
+            <div class="ocr-stage-hints" id="ocrStageHints"></div>
+          </div>
+
+          <div class="ocr-gallery-stage" id="ocrGalleryStage">
+            <div class="ocr-gallery-drop">
+              <span class="material-symbols-outlined">photo_library</span>
+              <h3>Galeriden foto ekleyin</h3>
+              <p id="ocrGalleryHelp" style="display:none"></p>
+              <button class="btn btn-accent2" onclick="OCR.openFilePicker()">Fotoğraf Seç</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ocr-queue-panel" id="ocrQueuePanel">
+        <div class="ocr-queue-header" onclick="OCR.toggleQueueSheet()">
+          <div>
+            <div class="ocr-kicker">İnceleme Kuyruğu</div>
+            <div class="ocr-queue-title" id="ocrQueueTitle">Henüz fotoğraf yok</div>
+          </div>
+          <div class="ocr-queue-stats" id="ocrQueueStats"></div>
+        </div>
+        <div class="ocr-queue-list" id="ocrQueueList"></div>
+      </div>
+    </div>
+
+    <div class="ocr-footer">
+      <div class="ocr-footer-meta" id="ocrFooterMeta"></div>
+      <div class="ocr-footer-actions">
+        <button class="btn btn-ghost" id="ocrGalleryActionBtn" onclick="OCR.openFilePicker()"><span class="material-symbols-outlined ocr-btn-icon">photo_library</span><span class="ocr-btn-label">Fotoğraf Seç</span></button>
+        <button class="btn btn-ghost" id="ocrSwitchCameraBtn" onclick="OCR.switchCamera()"><span class="material-symbols-outlined ocr-btn-icon">flip_camera_ios</span><span class="ocr-btn-label">Kamerayı Değiştir</span></button>
+        <button class="btn btn-ghost" id="ocrResetPreviewBtn" onclick="OCR.retryCapture()"><span class="material-symbols-outlined ocr-btn-icon">videocam</span><span class="ocr-btn-label">Canlı Önizleme</span></button>
+        <button class="btn btn-success" id="ocrApplyAllBtn" onclick="OCR.applyAllReady()"><span class="material-symbols-outlined ocr-btn-icon">done_all</span><span class="ocr-btn-label">Hazırları Uygula</span></button>
+        <button class="btn btn-accent2" id="ocrCaptureBtn" onclick="OCR.captureFrame()"><span class="material-symbols-outlined ocr-btn-icon">photo_camera</span><span class="ocr-btn-label">Yakala</span></button>
+      </div>
+    </div>
+  </div>
+  <input id="ocrFileInput" type="file" accept="image/*" hidden onchange="OCR.handleFileInput(event)">
+  <canvas id="cameraCanvas" style="display:none"></canvas>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/email.js"></script>
+<script src="/js/components.js"></script>
+<script src="/js/devices.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/ocr.js"></script>
+<script src="/js/sync.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventory Mail Generator</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #141720;
+    --surface2: #1c2030;
+    --border: #2a2f40;
+    --border-active: #3d8bff;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --text-dim: #94a3b8;
+    --accent: #3d8bff;
+    --accent2: #00d4aa;
+    --danger: #ff4d6d;
+    --warn: #f59e0b;
+    --success: #10b981;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* HEADER */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header-brand {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .header-brand .logo {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 12px; font-weight: 600; color: #fff;
+  }
+  .header-brand h1 {
+    font-family: var(--mono); font-size: 15px; font-weight: 600;
+    letter-spacing: -0.3px;
+    color: var(--text);
+  }
+  .header-brand span {
+    font-size: 11px; color: var(--text-muted);
+    font-family: var(--mono);
+  }
+  .header-actions { display: flex; gap: 8px; }
+
+  /* MAIN LAYOUT */
+  .main {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 0;
+    flex: 1;
+    height: calc(100vh - 57px);
+    overflow: hidden;
+  }
+
+  .panel {
+    overflow-y: auto;
+    height: 100%;
+    padding: 20px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-sizing: border-box;
+  }
+  .panel:last-child { border-right: none; }
+
+  .panel-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  /* CARD */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .card-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+  }
+
+  /* INPUTS */
+  label {
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+    font-family: var(--mono);
+    letter-spacing: 0.3px;
+  }
+  input, textarea, select {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 10px;
+    transition: border-color 0.15s;
+    outline: none;
+    resize: vertical;
+  }
+  input:focus, textarea:focus, select:focus {
+    border-color: var(--border-active);
+  }
+  input::placeholder, textarea::placeholder { color: var(--text-muted); }
+
+  .field { margin-bottom: 12px; }
+  .field:last-child { margin-bottom: 0; }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row-3 { display: grid; grid-template-columns: 60px 1fr; gap: 8px; }
+
+  /* JSON INPUT */
+  .json-area {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--accent2);
+    padding: 10px;
+    width: 100%;
+    height: 160px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .json-area:focus { border-color: var(--accent2); }
+  .json-status {
+    font-family: var(--mono);
+    font-size: 10px;
+    margin-top: 5px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .json-status.ok { color: var(--success); }
+  .json-status.err { color: var(--danger); }
+  .json-status.idle { color: var(--text-muted); }
+
+  .device-card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .device-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    background: var(--surface2);
+    cursor: pointer;
+    user-select: none;
+  }
+  .device-header-left { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--text); }
+  .device-header-right { display: flex; align-items: center; gap: 6px; }
+  .device-body { padding: 10px; display: none; }
+  .device-body.open { display: block; }
+  .device-section-title {
+    font-family: var(--mono); font-size: 9px; font-weight: 700;
+    letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--text-muted); margin: 10px 0 6px;
+  }
+
+  /* COMPONENT ROWS */
+  .comp-row {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 7px 8px;
+    margin-bottom: 6px;
+  }
+  .comp-row-top {
+    display: grid;
+    grid-template-columns: 1fr 50px 26px;
+    gap: 5px;
+    align-items: center;
+    margin-bottom: 5px;
+  }
+  .comp-row-bottom {
+    display: grid;
+    grid-template-columns: 1fr 80px 44px;
+    gap: 5px;
+    align-items: center;
+  }
+  .comp-row input, .comp-row select {
+    font-size: 11px;
+    padding: 5px 6px;
+    min-width: 0;
+  }
+  .comp-row .search-wrap { min-width: 0; }
+  .comp-row .search-wrap input { width: 100%; }
+  .comp-add-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px;
+  }
+
+  /* BUTTONS */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px;
+    border-radius: 5px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover { background: #5a9fff; }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { background: var(--surface2); color: var(--text); border-color: var(--border-active); }
+  .btn-danger {
+    background: transparent;
+    color: var(--danger);
+    border: none;
+    padding: 4px 6px;
+    font-size: 14px;
+  }
+  .btn-danger:hover { background: rgba(255,77,109,0.1); }
+  .btn-success {
+    background: var(--success);
+    color: #fff;
+  }
+  .btn-success:hover { background: #0ea572; }
+  .btn-sm {
+    padding: 5px 10px;
+    font-size: 10px;
+  }
+  .btn-accent2 {
+    background: var(--accent2);
+    color: #0d0f14;
+  }
+  .btn-accent2:hover { background: #00f0c0; }
+
+  /* PREVIEW PANEL */
+  .preview-panel {
+    overflow-y: auto;
+    height: 100%;
+    padding: 24px;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-sizing: border-box;
+  }
+  .preview-topbar {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .preview-frame {
+    background: #fff;
+    border-radius: 8px;
+    overflow: visible;
+    box-shadow: 0 4px 40px rgba(0,0,0,0.5);
+    flex-shrink: 0;
+  }
+  .preview-email-chrome {
+    background: #f0f0f0;
+    padding: 10px 16px;
+    border-bottom: 1px solid #ddd;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .preview-email-chrome .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #ccc;
+  }
+  .preview-email-chrome span {
+    font-size: 11px; color: #666; font-family: sans-serif;
+    margin-left: 4px;
+  }
+  .preview-content {
+    padding: 24px;
+    background: #f8f9fa;
+  }
+
+  /* INVENTORY SECTION */
+  .inv-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    transition: border-color 0.15s;
+  }
+  .inv-toggle:hover { border-color: var(--accent2); }
+  .inv-toggle-left { display: flex; align-items: center; gap: 10px; }
+  .inv-toggle-icon { font-size: 15px; }
+  .inv-toggle-label { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--text); }
+  .inv-badge {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    padding: 2px 8px; border-radius: 20px;
+    background: rgba(0,212,170,0.15); color: var(--accent2);
+    border: 1px solid rgba(0,212,170,0.3);
+  }
+  .inv-badge.empty { background: rgba(100,116,139,0.15); color: var(--text-muted); border-color: var(--border); }
+  .inv-chevron { font-size: 11px; color: var(--text-muted); transition: transform 0.2s; }
+  .inv-chevron.open { transform: rotate(180deg); }
+
+  .inv-body {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    padding: 14px;
+    display: none;
+  }
+  .inv-body.open { display: block; }
+
+  .inv-drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 10px;
+  }
+  .inv-drop-zone:hover, .inv-drop-zone.drag-over {
+    border-color: var(--accent2);
+    background: rgba(0,212,170,0.05);
+  }
+  .inv-drop-zone p { font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+  .inv-drop-zone .drop-icon { font-size: 22px; }
+  .inv-drop-zone input[type=file] { display: none; }
+
+  .inv-status { font-family: var(--mono); font-size: 10px; margin-top: 6px; }
+  .inv-status.ok { color: var(--success); }
+  .inv-status.err { color: var(--danger); }
+  .inv-status.idle { color: var(--text-muted); }
+
+  /* SEARCH DROPDOWN */
+  .search-wrap { position: relative; }
+  .search-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0; right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border-active);
+    border-radius: 6px;
+    z-index: 200;
+    max-height: 220px;
+    overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    display: none;
+  }
+  .search-dropdown.open { display: block; }
+  .search-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  .search-item:last-child { border-bottom: none; }
+  .search-item:hover, .search-item.active { background: rgba(61,139,255,0.12); }
+  .search-item-main {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    color: var(--text);
+  }
+  .search-item-sub {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--text-muted); margin-top: 2px;
+  }
+  .search-item-sub .hi { color: var(--accent); }
+  .search-empty {
+    padding: 12px; font-family: var(--mono); font-size: 11px;
+    color: var(--text-muted); text-align: center;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+  /* COMPONENT HEADER */
+  .comp-header {
+    display: grid;
+    grid-template-columns: 1fr 50px 26px;
+    gap: 5px;
+    margin-bottom: 6px;
+  }
+  .comp-header span {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 0 6px;
+  }
+
+  /* TOAST */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--success);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.25s;
+    pointer-events: none;
+    z-index: 9999;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  /* Health color */
+  .health-good { color: var(--success); }
+  .health-warn { color: var(--warn); }
+  .health-bad { color: var(--danger); }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+  }
+
+  .schema-hint {
+    background: rgba(0,212,170,0.06);
+    border: 1px solid rgba(0,212,170,0.2);
+    border-radius: 6px;
+    padding: 10px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent2);
+    line-height: 1.7;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .schema-hint:hover { background: rgba(0,212,170,0.1); }
+  .schema-hint-label {
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .subject-line {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 8px 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .subject-line strong { color: var(--text); }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-brand">
+    <div class="logo">INV</div>
+    <div>
+      <h1>Inventory Mail Generator</h1>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-ghost" onclick="resetForm()">↺ Temizle</button>
+    <button class="btn btn-accent2" onclick="copyHTML()">⎘ HTML Kopyala</button>
+    <button class="btn btn-primary" onclick="copyPlain()">✉ Plain Text</button>
+  </div>
+</header>
+
+<div class="main">
+  <!-- LEFT PANEL: INPUT -->
+  <div class="panel">
+
+    <!-- INVENTORY SECTION -->
+    <div>
+      <div class="panel-title">Envanter</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div>
+          <div class="inv-toggle" onclick="toggleInv()">
+            <div class="inv-toggle-left">
+              <span class="inv-toggle-icon">🖥</span>
+              <span class="inv-toggle-label">Cihaz Envanteri</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="inv-badge empty" id="invBadge">Yüklenmedi</span>
+              <span class="inv-chevron" id="invChevron">▼</span>
+            </div>
+          </div>
+          <div class="inv-body" id="invBody">
+            <div class="inv-drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
+              ondragover="event.preventDefault();this.classList.add('drag-over')"
+              ondragleave="this.classList.remove('drag-over')"
+              ondrop="handleFileDrop(event)">
+              <div class="drop-icon">⬆</div>
+              <p>JSON dosyası sürükle veya tıkla</p>
+              <input type="file" id="fileInput" accept=".json" onchange="handleFileInput(this)">
+            </div>
+            <div class="inv-status idle" id="invStatus">● Envanter bekleniyor</div>
+            <button class="btn btn-ghost btn-sm" onclick="localStorage.removeItem('inv_device');inventory=[];invIndex=[];document.getElementById('invStatus').className='inv-status idle';document.getElementById('invStatus').textContent='● Envanter bekleniyor';document.getElementById('invBadge').className='inv-badge empty';document.getElementById('invBadge').textContent='Yüklenmedi';" style="font-size:9px;margin-top:4px;color:var(--text-muted)">✕ Temizle</button>
+          </div>
+        </div>
+        <div>
+          <div class="inv-toggle" onclick="toggleCompInv()">
+            <div class="inv-toggle-left">
+              <span class="inv-toggle-icon">🔧</span>
+              <span class="inv-toggle-label">Bileşen Envanteri</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="inv-badge empty" id="compInvBadge">Yüklenmedi</span>
+              <span class="inv-chevron" id="compInvChevron">▼</span>
+            </div>
+          </div>
+          <div class="inv-body" id="compInvBody">
+            <div class="inv-drop-zone" onclick="document.getElementById('compFileInput').click()"
+              ondragover="event.preventDefault();this.classList.add('drag-over')"
+              ondragleave="this.classList.remove('drag-over')"
+              ondrop="handleCompFileDrop(event)">
+              <div class="drop-icon">⬆</div>
+              <p>JSON dosyası sürükle veya tıkla</p>
+              <input type="file" id="compFileInput" accept=".json" onchange="handleCompFileInput(this)">
+            </div>
+            <div class="inv-status idle" id="compInvStatus">● Bileşen envanteri bekleniyor</div>
+            <button class="btn btn-ghost btn-sm" onclick="localStorage.removeItem('inv_component');componentInventory=[];componentIndex=[];document.getElementById('compInvStatus').className='inv-status idle';document.getElementById('compInvStatus').textContent='● Bileşen envanteri bekleniyor';document.getElementById('compInvBadge').className='inv-badge empty';document.getElementById('compInvBadge').textContent='Yüklenmedi';" style="font-size:9px;margin-top:4px;color:var(--text-muted)">✕ Temizle</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="panel-title">Açıklama</div>
+      <div class="card">
+        <textarea id="f_description" rows="3" oninput="render()" style="resize:vertical;min-height:60px;"></textarea>
+      </div>
+    </div>
+    <div id="deviceList"></div>
+    <div style="margin-top:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="addDevice()" style="width:100%">+ Cihaz Ekle</button>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL: PREVIEW -->
+  <div class="preview-panel">
+    <div class="preview-topbar">
+      <div class="panel-title" style="margin:0">E-Posta Önizleme</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="copyHTML()">⎘ HTML Kopyala</button>
+        <button class="btn btn-ghost btn-sm" onclick="copyPlain()">Plain Text</button>
+      </div>
+    </div>
+    <div class="preview-frame">
+      <div class="preview-email-chrome">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <span>Email Preview</span>
+      </div>
+      <div class="preview-content">
+        <div id="emailPreview"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── DEVICES ────────────────────────────────────────────────
+let devices = [];
+let ddState  = {};
+
+function makeDevice() {
+  return { model:'', etiket:'', seri:'', not:'', componentsOnly:false, takilanComponents:[], components:[] };
+}
+
+function addDevice(data) {
+  const d = data || makeDevice();
+  devices.push(d);
+  const di = devices.length - 1;
+  ddState[di] = { model:{selected:-1}, etiket:{selected:-1}, seri:{selected:-1} };
+  renderDeviceList();
+  render();
+}
+
+function duplicateDevice(di) {
+  const src = devices[di];
+  function clearComp(c) {
+    const copy = JSON.parse(JSON.stringify(c));
+    copy.name = ''; copy.serial = ''; copy.health = '';
+    copy.units = copy.units.map(u => ({name:'', serial:'', health:''}));
+    return copy;
+  }
+  const copy = {
+    model: '', etiket: '', seri: '', not: '',
+    takilanComponents: src.takilanComponents.map(clearComp),
+    components:        src.components.map(clearComp)
+  };
+  devices.splice(di + 1, 0, copy);
+  ddState = {};
+  devices.forEach((_, i) => { ddState[i] = {model:{selected:-1},etiket:{selected:-1},seri:{selected:-1}}; });
+  renderDeviceList();
+  render();
+  showToast(`✓ Cihaz ${di+1} yapısı kopyalandı`);
+}
+
+function toggleComponentsOnly(di) {
+  devices[di].componentsOnly = !devices[di].componentsOnly;
+  renderDeviceList();
+  render();
+}
+
+function removeDevice(di) {
+  devices.splice(di, 1);
+  ddState = {};
+  devices.forEach((_,i) => { ddState[i] = {model:{selected:-1},etiket:{selected:-1},seri:{selected:-1}}; });
+  renderDeviceList();
+  render();
+}
+
+function updateDevice(di, key, val) {
+  devices[di][key] = val;
+  const lbl = document.getElementById('dv_label_'+di);
+  if (lbl) lbl.textContent = devices[di].model || devices[di].etiket || ('Cihaz '+(di+1));
+  render();
+}
+
+function toggleDeviceBody(di) {
+  const body = document.getElementById('dv_body_'+di);
+  if (body) body.classList.toggle('open');
+}
+
+// ── COMPONENTS ─────────────────────────────────────────────
+const MULTI_TYPES = new Set(['DISK','NIC']);
+const TYPES = ['CPU','RAM','DISK','NIC'];
+
+function makeComp(data) {
+  data = data || {};
+  const qty  = data.qty  || 1;
+  const type = data.type || 'CPU';
+  return {
+    type, qty,
+    name:   data.name   || '',
+    serial: data.serial || '',
+    health: data.health !== undefined ? data.health : '',
+    units: MULTI_TYPES.has(type)
+      ? Array.from({length:qty}, function(_,i){ return {
+          name:   (data.units&&data.units[i]) ? data.units[i].name   : (data.name||''),
+          serial: (data.units&&data.units[i]) ? data.units[i].serial : '',
+          health: (data.units&&data.units[i]) ? data.units[i].health : ''
+        };})
+      : []
+  };
+}
+
+function addComponent(di, data) {
+  devices[di].components.push(makeComp(data||{}));
+  renderCompListFor(di); render();
+}
+function removeComponent(di, ci) {
+  devices[di].components.splice(ci,1);
+  renderCompListFor(di); render();
+}
+function updateComp(di, ci, key, val) {
+  var c = devices[di].components[ci];
+  if (key==='type') {
+    c.type=val;
+    c.units=MULTI_TYPES.has(val)?Array.from({length:c.qty},function(){return{name:'',serial:'',health:''};}):[]; 
+    renderCompListFor(di); render();
+  } else if (key==='qty') {
+    var qty=parseInt(val)||1; c.qty=qty;
+    if (MULTI_TYPES.has(c.type)) {
+      while(c.units.length<qty) c.units.push({name:'',serial:'',health:''});
+      c.units=c.units.slice(0,qty);
+      renderCompListFor(di);
+    }
+    render();
+  } else { c[key]=val; render(); }
+}
+function updateCompUnit(di, ci, ui, key, val) {
+  devices[di].components[ci].units[ui][key]=val; render();
+}
+
+function addTakilan(di, data) {
+  devices[di].takilanComponents.push(makeComp(data||{}));
+  renderTakilanListFor(di); render();
+}
+function removeTakilan(di, ci) {
+  devices[di].takilanComponents.splice(ci,1);
+  renderTakilanListFor(di); render();
+}
+function updateTakilan(di, ci, key, val) {
+  var c = devices[di].takilanComponents[ci];
+  if (key==='type') {
+    c.type=val;
+    c.units=MULTI_TYPES.has(val)?Array.from({length:c.qty},function(){return{name:'',serial:'',health:''};}):[]; 
+    renderTakilanListFor(di); render();
+  } else if (key==='qty') {
+    var qty=parseInt(val)||1; c.qty=qty;
+    if (MULTI_TYPES.has(c.type)) {
+      while(c.units.length<qty) c.units.push({name:'',serial:'',health:''});
+      c.units=c.units.slice(0,qty);
+      renderTakilanListFor(di);
+    }
+    render();
+  } else { c[key]=val; render(); }
+}
+function updateTakilanUnit(di, ci, ui, key, val) {
+  devices[di].takilanComponents[ci].units[ui][key]=val; render();
+}
+
+// ── RENDER HELPERS ─────────────────────────────────────────
+function renderUnitRows(c, di, ci, listType) {
+  const fn  = listType === 'comp' ? 'updateCompUnit' : 'updateTakilanUnit';
+  const pfx = listType === 'comp' ? 'compdd' : 'takilandd';
+  const snpfx = listType === 'comp' ? 'compsndd' : 'takilansndd';
+  return c.units.map((u, ui) => `
+    <div class="comp-row-bottom">
+      <div class="search-wrap">
+        <input type="text" value="${u.name}" placeholder="Model"
+          oninput="${fn}(${di},${ci},${ui},'name',this.value);onCompSearch(this,'${listType}_${di}_${ci}',${ui})"
+          onkeydown="onCompSearchKey(event,'${listType}_${di}_${ci}',${ui})"
+          onblur="closeCompDD('${listType}_${di}_${ci}',${ui},150)"
+          onfocus="closeAllDropdowns()"
+          autocomplete="off" style="width:100%">
+        <div class="search-dropdown" id="${pfx}_${di}_${ci}_${ui}"></div>
+      </div>
+      <input type="text" value="${u.serial}" placeholder="Seri No"
+        oninput="${fn}(${di},${ci},${ui},'serial',this.value)"
+        autocomplete="off" style="min-width:0">
+      <input type="number" min="0" max="100" value="${u.health}" placeholder="%"
+        style="text-align:center" oninput="${fn}(${di},${ci},${ui},'health',this.value)" title="Sağlık %">
+    </div>`).join('');
+}
+
+function renderCompRows(list, di, listType) {
+  const removeFn = listType === 'comp' ? 'removeComponent' : 'removeTakilan';
+  const updateFn = listType === 'comp' ? 'updateComp'      : 'updateTakilan';
+  const ddPfx    = listType === 'comp' ? 'compdd'          : 'takilandd';
+  return list.map((c, ci) => {
+    const isMulti = MULTI_TYPES.has(c.type);
+    const opts = TYPES.map(t => `<option${c.type===t?' selected':''}>${t}</option>`).join('');
+    const bottomHtml = isMulti
+      ? renderUnitRows(c, di, ci, listType)
+      : `<div class="comp-row-bottom">
+          <div class="search-wrap">
+            <input type="text" value="${c.name}" placeholder="Model"
+              oninput="${updateFn}(${di},${ci},'name',this.value);onCompSearch(this,'${listType}_${di}',${ci})"
+              onkeydown="onCompSearchKey(event,'${listType}_${di}',${ci})"
+              onblur="closeCompDD('${listType}_${di}',${ci},150)"
+              autocomplete="off" style="width:100%">
+            <div class="search-dropdown" id="${ddPfx}_${di}_${ci}"></div>
+          </div>
+        </div>`;
+    return `<div class="comp-row" id="${listType}row_${di}_${ci}">
+      <div class="comp-row-top">
+        <select onchange="${updateFn}(${di},${ci},'type',this.value)" style="width:100%">${opts}</select>
+        <input type="number" min="1" max="32" value="${c.qty}"
+          onchange="${updateFn}(${di},${ci},'qty',parseInt(this.value)||1)" style="text-align:center">
+        <button class="btn btn-danger" onclick="${removeFn}(${di},${ci})" style="padding:3px 6px">×</button>
+      </div>${bottomHtml}</div>`;
+  }).join('');
+}
+
+function renderDeviceList() {
+  const container = document.getElementById('deviceList');
+  container.innerHTML = devices.map((d, di) => {
+    const label = d.model || d.etiket || `Cihaz ${di+1}`;
+    const deleteBtn = devices.length > 1
+      ? `<button class="btn btn-danger" style="padding:2px 7px;font-size:10px" onclick="event.stopPropagation();removeDevice(${di})">×</button>`
+      : '';
+    const dupBtn = `<button class="btn btn-ghost" style="padding:2px 7px;font-size:10px" onclick="event.stopPropagation();duplicateDevice(${di})" title="Kopyala">⎘</button>`;
+    const coBtn  = `<button class="btn btn-ghost" style="padding:2px 7px;font-size:10px;${d.componentsOnly?'color:var(--accent2);':''}" onclick="event.stopPropagation();toggleComponentsOnly(${di})" title="Sadece bileşenler">≡</button>`;
+    const deviceFields = d.componentsOnly ? '' : `
+        <div class="field"><label>MODEL</label>
+          <div class="search-wrap">
+            <input type="text" value="${d.model}" placeholder="Model"
+              oninput="updateDevice(${di},'model',this.value);onSearchInput(this,'model',${di})"
+              onkeydown="onSearchKey(event,'model',${di})"
+              onblur="closeDropdown('model',${di},150)" autocomplete="off">
+            <div class="search-dropdown" id="dd_model_${di}"></div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field"><label>ETİKET</label>
+            <div class="search-wrap">
+              <input type="text" value="${d.etiket}" placeholder="Etiket"
+                oninput="updateDevice(${di},'etiket',this.value);onSearchInput(this,'etiket',${di})"
+                onkeydown="onSearchKey(event,'etiket',${di})"
+                onblur="closeDropdown('etiket',${di},150)" autocomplete="off">
+              <div class="search-dropdown" id="dd_etiket_${di}"></div>
+            </div>
+          </div>
+          <div class="field"><label>SERİ NO</label>
+            <div class="search-wrap">
+              <input type="text" value="${d.seri}" placeholder="Seri No"
+                oninput="updateDevice(${di},'seri',this.value);onSearchInput(this,'seri',${di})"
+                onkeydown="onSearchKey(event,'seri',${di})"
+                onblur="closeDropdown('seri',${di},150)" autocomplete="off">
+              <div class="search-dropdown" id="dd_seri_${di}"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field"><label>NOT</label>
+          <textarea rows="2" placeholder="Açıklama veya not..."
+            oninput="updateDevice(${di},'not',this.value)">${d.not}</textarea>
+        </div>`;
+    return `<div class="device-card">
+      <div class="device-header" onclick="toggleDeviceBody(${di})">
+        <div class="device-header-left">
+          <span style="color:var(--accent2)">#${di+1}</span>
+          <span id="dv_label_${di}">${label}</span>
+        </div>
+        <div class="device-header-right">${coBtn}${dupBtn}${deleteBtn}<span style="font-size:10px;color:var(--text-muted)">▾</span></div>
+      </div>
+      <div class="device-body open" id="dv_body_${di}">
+        ${deviceFields}
+        ${d.componentsOnly ? `
+        <div class="device-section-title">Donanım</div>
+        <div class="comp-header"><span>Tip</span><span>Adet</span><span></span></div>
+        <div id="compList_${di}">${renderCompRows(d.components, di, 'comp')}</div>
+        <div class="comp-add-row" style="margin-top:6px">
+          <button class="btn btn-ghost btn-sm" onclick="addComponent(${di})">+ Donanım Ekle</button>
+        </div>
+        ` : `
+        <div class="device-section-title">Takılan Donanım</div>
+        <div class="comp-header"><span>Tip</span><span>Adet</span><span></span></div>
+        <div id="takilanList_${di}">${renderCompRows(d.takilanComponents, di, 'takilan')}</div>
+        <div class="comp-add-row" style="margin-top:6px">
+          <button class="btn btn-ghost btn-sm" onclick="addTakilan(${di})">+ Takılan Ekle</button>
+        </div>
+        <div class="device-section-title">Çıkarılan Donanım</div>
+        <div class="comp-header"><span>Tip</span><span>Adet</span><span></span></div>
+        <div id="compList_${di}">${renderCompRows(d.components, di, 'comp')}</div>
+        <div class="comp-add-row" style="margin-top:6px">
+          <button class="btn btn-ghost btn-sm" onclick="addComponent(${di})">+ Çıkarılan Ekle</button>
+        </div>
+        `}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderCompListFor(di) {
+  var el = document.getElementById('compList_'+di);
+  if (el) el.innerHTML = renderCompRows(devices[di].components, di, 'comp');
+}
+function renderTakilanListFor(di) {
+  var el = document.getElementById('takilanList_'+di);
+  if (el) el.innerHTML = renderCompRows(devices[di].takilanComponents, di, 'takilan');
+}
+
+
+function getFormData() {
+  return { description: document.getElementById('f_description').value, devices };
+}
+
+function buildEmailHTML(data) {
+  const tdBase   = 'padding:8px 12px;border:1px solid #c8cdd2;background-color:#ffffff;color:#1a1a1a;font-size:13px;font-family:Arial,Helvetica,sans-serif;max-width:1px;overflow-wrap:break-word;word-break:break-all;';
+  const tdLabel  = 'padding:8px 12px;border:1px solid #c8cdd2;background-color:#f0f2f5;color:#1a1a1a;font-size:13px;font-weight:600;white-space:nowrap;text-align:center;font-family:Arial,Helvetica,sans-serif;';
+  const tdMono   = tdBase;
+  const tdCenter = tdBase + 'text-align:center;white-space:nowrap;max-width:none;';
+  const tdMuted  = tdBase + 'color:#888888;text-align:center;white-space:nowrap;max-width:none;';
+  const thMain   = 'padding:11px 14px;background-color:#2d3748;color:#ffffff;text-align:center;font-size:13px;font-weight:700;letter-spacing:1.2px;border:none;font-family:Arial,Helvetica,sans-serif;';
+  const thSection= 'padding:9px 14px;background-color:#2d3748;color:#ffffff;text-align:center;font-size:12px;font-weight:700;letter-spacing:1px;border:none;border-top:2px solid #2d3748;font-family:Arial,Helvetica,sans-serif;';
+
+  function buildCompRows(list) {
+    if (!list || list.length === 0) return '';
+    let rows = '';
+    list.forEach(c => {
+      const isMulti = MULTI_TYPES.has(c.type);
+      if (isMulti && c.units && c.units.length > 0) {
+        c.units.forEach((u, u_i) => {
+          const healthVal = (u.health !== '' && u.health !== null && u.health !== undefined) ? parseInt(u.health) : null;
+          const hasSerial = !!u.serial;
+          const hasHealth = healthVal !== null;
+          const healthColor = hasHealth ? (healthVal >= 90 ? '#1a7a4a' : healthVal >= 70 ? '#b45309' : '#b91c1c') : '';
+
+          let contentCells;
+          if (!hasSerial && !hasHealth) {
+            // model spans all 3 content columns
+            contentCells = `<td colspan="3" style="${tdBase}">${u.name || '—'}</td>`;
+          } else if (!hasHealth) {
+            // model + serial spans 2, no health
+            contentCells = `<td style="${tdBase}">${u.name || '—'}</td><td colspan="2" style="${tdMono}">${u.serial}</td>`;
+          } else if (!hasSerial) {
+            // model spans 2, health alone
+            contentCells = `<td colspan="2" style="${tdBase}">${u.name || '—'}</td><td style="${tdCenter}color:${healthColor};font-weight:700;">%${healthVal}</td>`;
+          } else {
+            contentCells = `<td style="${tdBase}">${u.name || '—'}</td><td style="${tdMono}">${u.serial}</td><td style="${tdCenter}color:${healthColor};font-weight:700;">%${healthVal}</td>`;
+          }
+
+          if (u_i === 0) {
+            rows += `<tr>
+              <td rowspan="${c.units.length}" style="${tdLabel}text-align:center;vertical-align:middle;">${c.type}</td>
+              <td rowspan="${c.units.length}" style="${tdCenter}font-weight:600;vertical-align:middle;">${c.qty}x</td>
+              ${contentCells}
+            </tr>`;
+          } else {
+            rows += `<tr>${contentCells}</tr>`;
+          }
+        });
+      } else {
+        rows += `<tr>
+          <td style="${tdLabel}text-align:center;">${c.type}</td>
+          <td style="${tdCenter}font-weight:600;">${c.qty}x</td>
+          <td colspan="3" style="${tdBase}">${c.name || '—'}</td>
+        </tr>`;
+      }
+    });
+    return rows;
+  }
+
+  const deviceBlocks = data.devices.map((d, di) => {
+    const header = d.componentsOnly
+      ? `<tr><th colspan="5" style="${thMain}">DONANIM</th></tr>`
+      : data.devices.length > 1
+        ? `<tr><th colspan="5" style="${thMain}">CİHAZ ${di+1}${d.model ? ' – '+d.model : ''}</th></tr>`
+        : `<tr><th colspan="5" style="${thMain}">CİHAZ BİLGİLERİ</th></tr>`;
+    const notRow = d.not ? `<tr><td style="${tdLabel}">Not</td><td colspan="4" style="${tdBase}">${d.not}</td></tr>` : '';
+    const takilanRows = d.takilanComponents.length > 0
+      ? (d.componentsOnly ? buildCompRows(d.takilanComponents) : `<tr><th colspan="5" style="${thSection}">TAKILAN DONANIM</th></tr>${buildCompRows(d.takilanComponents)}`)
+      : '';
+    const cikaRows = d.components.length > 0
+      ? (d.componentsOnly ? buildCompRows(d.components) : `<tr><th colspan="5" style="${thSection}">ÇIKARILAN DONANIM</th></tr>${buildCompRows(d.components)}`)
+      : '';
+    const deviceInfoRows = d.componentsOnly ? '' :
+        `<tr><td style="${tdLabel}">Model</td><td colspan="4" style="${tdBase}">${d.model||'—'}</td></tr>`
+      + `<tr><td style="${tdLabel}">Etiket</td><td colspan="4" style="${tdBase}">${d.etiket||'—'}</td></tr>`
+      + `<tr><td style="${tdLabel}">Seri No</td><td colspan="4" style="${tdMono}">${d.seri||'—'}</td></tr>`
+      + notRow;
+    return header + deviceInfoRows + takilanRows + cikaRows;
+  }).join('');
+
+  const descHtml = data.description
+    ? `<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1a1a1a;margin:0 0 14px 0;line-height:1.6;white-space:pre-wrap;">${data.description}</p>`
+    : '';
+
+  return `
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:700px;background-color:#ffffff;padding:0;" bgcolor="#ffffff">
+  ${descHtml}
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:2px solid #2d3748;">
+    <tbody>${deviceBlocks}</tbody>
+  </table>
+</div>`;
+}
+
+function buildPlainText(data) {
+  return data.devices.map((d, di) => {
+    let t = `=== CİHAZ ${di+1} ===\n`;
+    t += `Model   : ${d.model || '—'}\n`;
+    t += `Etiket  : ${d.etiket || '—'}\n`;
+    t += `Seri No : ${d.seri || '—'}\n`;
+    if (d.not) t += `Not     : ${d.not}\n`;
+    if (d.takilanComponents.length > 0) {
+      t += '\n--- TAKILAN ---\n';
+      d.takilanComponents.forEach(c => {
+        t += `${c.type.padEnd(6)} ${c.qty}x  ${c.name}\n`;
+      });
+    }
+    if (d.components.length > 0) {
+      t += '\n--- ÇIKARILAN ---\n';
+      d.components.forEach(c => {
+        if (MULTI_TYPES.has(c.type)) {
+          c.units.forEach(u => { t += `${c.type.padEnd(6)} 1x  ${u.name}${u.serial?' | '+u.serial:''}${u.health?' [%'+u.health+']':''}\n`; });
+        } else {
+          t += `${c.type.padEnd(6)} ${c.qty}x  ${c.name}\n`;
+        }
+      });
+    }
+    return t;
+  }).join('\n');
+}
+
+function render() {
+  const data = getFormData();
+  document.getElementById('emailPreview').innerHTML = buildEmailHTML(data);
+}
+
+function copyHTML() {
+  const data = getFormData();
+  const html = buildEmailHTML(data);
+
+  // Create a temporary off-screen container with the rendered HTML
+  const tmp = document.createElement('div');
+  tmp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none';
+  tmp.innerHTML = html;
+  document.body.appendChild(tmp);
+
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(tmp);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    const ok = document.execCommand('copy');
+    sel.removeAllRanges();
+    if (ok) {
+      showToast('✓ HTML kopyalandı – Outlook/Gmail\'e yapıştırabilirsiniz');
+    } else {
+      throw new Error('execCommand failed');
+    }
+  } catch(e) {
+    // Last resort: copy raw HTML source
+    navigator.clipboard.writeText(html).then(() => {
+      showToast('✓ HTML source kopyalandı (kaynak kodu)');
+    });
+  } finally {
+    document.body.removeChild(tmp);
+  }
+}
+
+function copyPlain() {
+  const data = getFormData();
+  navigator.clipboard.writeText(buildPlainText(data));
+  showToast('✓ Plain text kopyalandı');
+}
+
+function resetForm() {
+  document.getElementById('f_description').value = '';
+  devices = [];
+  ddState = {};
+  addDevice();
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ── COMPONENT INVENTORY ────────────────────────────────────
+let componentInventory = [];
+let componentIndex = [];
+
+function toggleCompInv() {
+  const body    = document.getElementById('compInvBody');
+  const chevron = document.getElementById('compInvChevron');
+  const open    = body.classList.toggle('open');
+  chevron.classList.toggle('open', open);
+}
+
+function loadComponentInventoryData(raw) {
+  const status = document.getElementById('compInvStatus');
+  const badge  = document.getElementById('compInvBadge');
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) throw new Error('Kök eleman array olmalı: [...]');
+    componentInventory = arr;
+    componentIndex = arr.map(d =>
+      `${d.Name||''} ${d.Category||''} ${d.Serial||''}`.toLowerCase()
+    );
+    status.className = 'inv-status ok';
+    status.textContent = `✓ ${arr.length} bileşen yüklendi`;
+    badge.className = 'inv-badge';
+    badge.textContent = `${arr.length} bileşen`;
+    try { localStorage.setItem('inv_component', raw); } catch(e) {}
+    setTimeout(() => {
+      document.getElementById('compInvBody').classList.remove('open');
+      document.getElementById('compInvChevron').classList.remove('open');
+    }, 800);
+  } catch(e) {
+    status.className = 'inv-status err';
+    status.textContent = '✗ ' + e.message.substring(0, 80);
+  }
+}
+
+function handleCompFileInput(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => loadComponentInventoryData(e.target.result);
+  reader.readAsText(file);
+}
+
+function handleCompFileDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => loadComponentInventoryData(ev.target.result);
+  reader.readAsText(file);
+}
+
+function inferType(category) {
+  const c = (category || '').toLowerCase();
+  if (c.includes('disk') || c.includes('sas') || c.includes('ssd') || c.includes('hdd') || c.includes('nvme')) return 'DISK';
+  if (c.includes('ram') || c.includes('memory') || c.includes('dimm')) return 'RAM';
+  if (c.includes('cpu') || c.includes('processor') || c.includes('xeon')) return 'CPU';
+  if (c.includes('nic') || c.includes('network') || c.includes('ethernet') || c.includes('adapter')) return 'NIC';
+  return null;
+}
+
+function onCompSearch(input, listType, rowIdx) {
+  const q  = input.value.trim();
+  const dd = document.getElementById(compDdId(listType, rowIdx));
+  if (!dd) return;
+  if (!q || q.length < 2 || componentInventory.length === 0) {
+    dd.classList.remove('open'); return;
+  }
+  const ql = q.toLowerCase();
+  const results = [];
+  for (let i = 0; i < componentIndex.length; i++) {
+    if (componentIndex[i].includes(ql)) {
+      results.push({ item: componentInventory[i], idx: i });
+      if (results.length >= 8) break;
+    }
+  }
+  if (results.length === 0) {
+    dd.innerHTML = `<div class="search-empty">Sonuç bulunamadı</div>`;
+    dd.classList.add('open'); return;
+  }
+  dd.innerHTML = results.map(({ item, idx }) => `
+    <div class="search-item" onmousedown="selectComponent('${listType}',${rowIdx},${idx})">
+      <div class="search-item-main">${highlight(item.Name||'', q)}</div>
+      <div class="search-item-sub">${item.Category||''}${item.Serial ? ' · SN: ' + item.Serial : ''}</div>
+    </div>
+  `).join('');
+  dd.classList.add('open');
+}
+
+// Build the dropdown element ID from listType + rowIdx
+// Single: listType='comp_di'     rowIdx=ci  → compdd_di_ci
+// Multi:  listType='comp_di_ci'  rowIdx=ui  → compdd_di_ci_ui
+function compDdId(listType, rowIdx) {
+  const parts  = listType.split('_');
+  const prefix = parts[0] === 'comp' ? 'compdd' : 'takilandd';
+  if (parts.length === 2) {
+    // single-unit: parts=[prefix, di], rowIdx=ci
+    return `${prefix}_${parts[1]}_${rowIdx}`;
+  } else {
+    // multi-unit: parts=[prefix, di, ci], rowIdx=ui
+    return `${prefix}_${parts[1]}_${parts[2]}_${rowIdx}`;
+  }
+}
+
+function onCompSearchKey(event, listType, rowIdx) {
+  const dd = document.getElementById(compDdId(listType, rowIdx));
+  if (!dd || !dd.classList.contains('open')) return;
+  const items = dd.querySelectorAll('.search-item');
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    const next = dd.querySelector('.search-item.active');
+    const idx  = next ? [...items].indexOf(next) + 1 : 0;
+    items.forEach(el => el.classList.remove('active'));
+    if (items[Math.min(idx, items.length-1)]) items[Math.min(idx, items.length-1)].classList.add('active');
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    const cur = dd.querySelector('.search-item.active');
+    const idx = cur ? [...items].indexOf(cur) - 1 : items.length - 1;
+    items.forEach(el => el.classList.remove('active'));
+    if (items[Math.max(idx, 0)]) items[Math.max(idx, 0)].classList.add('active');
+  } else if (event.key === 'Enter') {
+    event.preventDefault();
+    const active = dd.querySelector('.search-item.active');
+    if (active) active.dispatchEvent(new MouseEvent('mousedown'));
+  } else if (event.key === 'Escape') {
+    closeAllDropdowns();
+  }
+}
+
+function closeCompDD(listType, rowIdx, delay) {
+  setTimeout(() => {
+    const dd = document.getElementById(compDdId(listType, rowIdx));
+    if (dd) dd.classList.remove('open');
+  }, delay);
+}
+
+
+function serialDdId(listType, rowIdx) {
+  const parts  = listType.split('_');
+  const prefix = parts[0] === 'comp' ? 'compsndd' : 'takilansndd';
+  if (parts.length === 2) return `${prefix}_${parts[1]}_${rowIdx}`;
+  return `${prefix}_${parts[1]}_${parts[2]}_${rowIdx}`;
+}
+
+function onSerialSearch(input, listType, rowIdx) {
+  const q  = input.value.trim();
+  const dd = document.getElementById(serialDdId(listType, rowIdx));
+  if (!dd) return;
+  if (!q || q.length < 1 || componentInventory.length === 0) {
+    dd.classList.remove('open'); return;
+  }
+  const ql = q.toLowerCase();
+  const results = [];
+  for (let i = 0; i < componentInventory.length; i++) {
+    const sn = (componentInventory[i].Serial || '').toLowerCase();
+    if (sn.includes(ql)) {
+      results.push({ item: componentInventory[i], idx: i });
+      if (results.length >= 8) break;
+    }
+  }
+  if (results.length === 0) { dd.classList.remove('open'); return; }
+  dd.innerHTML = results.map(({ item, idx }) => `
+    <div class="search-item" onmousedown="selectSerial('${listType}',${rowIdx},${idx})">
+      <div class="search-item-main">${highlight(item.Serial||'', q)}</div>
+      <div class="search-item-sub">${item.Name||''}${item.Category?' · '+item.Category:''}</div>
+    </div>
+  `).join('');
+  dd.classList.add('open');
+}
+
+function closeSerialDD(listType, rowIdx, delay) {
+  setTimeout(() => {
+    const dd = document.getElementById(serialDdId(listType, rowIdx));
+    if (dd) dd.classList.remove('open');
+  }, delay);
+}
+
+function selectSerial(listType, rowIdx, compIdx) {
+  const comp = componentInventory[compIdx];
+  if (!comp) return;
+  const parts  = listType.split('_');
+  const prefix = parts[0];
+  const di     = parseInt(parts[1]);
+  const arr    = prefix === 'comp' ? devices[di].components : devices[di].takilanComponents;
+  if (parts.length === 3) {
+    const ci = parseInt(parts[2]);
+    arr[ci].units[rowIdx].serial = comp.Serial || '';
+    // Also fill name if empty
+    if (!arr[ci].units[rowIdx].name) arr[ci].units[rowIdx].name = comp.Name || '';
+  } else {
+    arr[rowIdx].serial = comp.Serial || '';
+    if (!arr[rowIdx].name) arr[rowIdx].name = comp.Name || '';
+  }
+  if (prefix === 'comp') renderCompListFor(di); else renderTakilanListFor(di);
+  render();
+}
+
+function selectComponent(listType, rowIdx, compIdx) {
+  const comp = componentInventory[compIdx];
+  if (!comp) return;
+  const name   = comp.Name   || '';
+  const serial = comp.Serial || '';
+  const type   = inferType(comp.Category);
+  const parts  = listType.split('_');
+  const prefix = parts[0]; // 'comp' or 'takilan'
+  const di     = parseInt(parts[1]);
+  const arr    = prefix === 'comp' ? devices[di].components : devices[di].takilanComponents;
+
+  if (parts.length === 3) {
+    // multi-unit (DISK/NIC): parts=[prefix, di, ci], rowIdx=ui
+    const ci = parseInt(parts[2]);
+    arr[ci].units[rowIdx].name   = name;
+    arr[ci].units[rowIdx].serial = serial;
+  } else {
+    // single-unit (CPU/RAM): parts=[prefix, di], rowIdx=ci
+    arr[rowIdx].name   = name;
+    arr[rowIdx].serial = serial;
+    if (type) arr[rowIdx].type = type;
+  }
+  if (prefix === 'comp') renderCompListFor(di); else renderTakilanListFor(di);
+  render();
+}
+
+// ── INVENTORY ──────────────────────────────────────────────
+let invIndex  = [];   // flat searchable strings
+
+
+function toggleInv() {
+  const body    = document.getElementById('invBody');
+  const chevron = document.getElementById('invChevron');
+  const open    = body.classList.toggle('open');
+  chevron.classList.toggle('open', open);
+}
+
+function loadInventoryData(raw) {
+  const status = document.getElementById('invStatus');
+  const badge  = document.getElementById('invBadge');
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) throw new Error('Kök eleman array olmalı: [...]');
+    inventory = arr;
+    // Build search index — matches actual field names: "Serial", "Asset Tag", "Model"
+    invIndex = arr.map(d => {
+      const model  = d.Model        || d.model   || '';
+      const etiket = d['Asset Tag'] || d.etiket  || '';
+      const serial = d.Serial       || d.seri_no || '';
+      const name   = d['Asset Name']|| '';
+      const compSerials = (d.components||[]).map(c => c.serial||'').join(' ');
+      const compNames   = (d.components||[]).map(c => c.name||'').join(' ');
+      return `${model} ${etiket} ${serial} ${name} ${compSerials} ${compNames}`.toLowerCase();
+    });
+    status.className = 'inv-status ok';
+    status.textContent = `✓ ${arr.length} cihaz yüklendi`;
+    badge.className = 'inv-badge';
+    badge.textContent = `${arr.length} cihaz`;
+    try { localStorage.setItem('inv_device', raw); } catch(e) {}
+    // Auto-close panel
+    setTimeout(() => {
+      document.getElementById('invBody').classList.remove('open');
+      document.getElementById('invChevron').classList.remove('open');
+    }, 800);
+  } catch(e) {
+    status.className = 'inv-status err';
+    status.textContent = '✗ ' + e.message.substring(0, 80);
+  }
+}
+
+function handleFileInput(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => loadInventoryData(e.target.result);
+  reader.readAsText(file);
+}
+
+function handleFileDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => loadInventoryData(ev.target.result);
+  reader.readAsText(file);
+}
+
+// ── SEARCH ─────────────────────────────────────────────────
+function searchInventory(query) {
+  if (!query || query.length < 2 || inventory.length === 0) return [];
+  const q = query.toLowerCase();
+  const results = [];
+  for (let i = 0; i < invIndex.length; i++) {
+    if (invIndex[i].includes(q)) {
+      results.push(inventory[i]);
+      if (results.length >= 8) break;
+    }
+  }
+  return results;
+}
+
+function highlight(text, query) {
+  if (!text) return '—';
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return text.slice(0, idx)
+    + `<span class="hi">${text.slice(idx, idx + query.length)}</span>`
+    + text.slice(idx + query.length);
+}
+
+function onSearchInput(input, field, di) {
+  const q = input.value.trim();
+  const dd = document.getElementById('dd_'+field+'_'+di);
+  if (!dd) return;
+  if (!ddState[di]) ddState[di] = {};
+  if (!ddState[di][field]) ddState[di][field] = {selected:-1};
+  ddState[di][field].selected = -1;
+  const results = searchInventory(q);
+  if (!q || q.length < 2 || results.length === 0) {
+    if (q.length >= 2 && results.length === 0 && inventory.length > 0) {
+      dd.innerHTML = '<div class="search-empty">Sonuç bulunamadı</div>';
+      dd.classList.add('open');
+    } else {
+      dd.classList.remove('open');
+    }
+    return;
+  }
+  dd.innerHTML = results.map(function(d,i) {
+    var model  = d.Model        || d.model   || '—';
+    var etiket = d['Asset Tag'] || d.etiket  || '—';
+    var serial = d.Serial       || d.seri_no || '—';
+    var compCount = (d.components||[]).length;
+    return '<div class="search-item" onmousedown="selectDevice('+inventory.indexOf(d)+','+di+')">'
+      +'<div class="search-item-main">'+highlight(model,q)+' · <span style="color:var(--accent2)">'+highlight(etiket,q)+'</span></div>'
+      +'<div class="search-item-sub">SN: '+highlight(serial,q)+(compCount?' · '+compCount+' bileşen':'')+'</div>'
+      +'</div>';
+  }).join('');
+  dd.classList.add('open');
+}
+
+function onSearchKey(event, field, di) {
+  var dd = document.getElementById('dd_'+field+'_'+di);
+  if (!dd || !dd.classList.contains('open')) return;
+  var items = dd.querySelectorAll('.search-item');
+  if (items.length === 0) return;
+  if (!ddState[di]) ddState[di] = {};
+  if (!ddState[di][field]) ddState[di][field] = {selected:-1};
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    ddState[di][field].selected = Math.min(ddState[di][field].selected+1, items.length-1);
+    items.forEach(function(el,i){ el.classList.toggle('active', i===ddState[di][field].selected); });
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    ddState[di][field].selected = Math.max(ddState[di][field].selected-1, 0);
+    items.forEach(function(el,i){ el.classList.toggle('active', i===ddState[di][field].selected); });
+  } else if (event.key === 'Enter') {
+    event.preventDefault();
+    var sel = ddState[di][field].selected;
+    if (sel >= 0 && items[sel]) items[sel].dispatchEvent(new MouseEvent('mousedown'));
+  } else if (event.key === 'Escape') {
+    dd.classList.remove('open');
+  }
+}
+
+function closeDropdown(field, di, delay) {
+  setTimeout(function() {
+    var dd = document.getElementById('dd_'+field+'_'+di);
+    if (dd) dd.classList.remove('open');
+  }, delay||0);
+}
+
+function selectDevice(inventoryIdx, di) {
+  var d = inventory[inventoryIdx];
+  if (!d) return;
+  fillFromDevice(d, di);
+  ['model','etiket','seri'].forEach(function(f) {
+    var dd = document.getElementById('dd_'+f+'_'+di);
+    if (dd) dd.classList.remove('open');
+  });
+}
+
+function fillFromDevice(d, di) {
+  var model  = d.Model        || d.model   || '';
+  var etiket = d['Asset Tag'] || d.etiket  || '';
+  var serial = d.Serial       || d.seri_no || '';
+  devices[di].model  = model;
+  devices[di].etiket = etiket;
+  devices[di].seri   = serial;
+  if (d.components && d.components.length > 0) {
+    devices[di].components = d.components.map(function(c){ return {
+      type: c.type||'CPU', qty: c.qty||1, name: c.name||'', serial: c.serial||'',
+      health: c.health!==undefined?c.health:'', units:[]
+    };});
+  }
+  renderDeviceList();
+  render();
+  showToast('✓ '+model+' · '+etiket+' yüklendi');
+}
+
+// ── INVENTORY ──────────────────────────────────────────────
+
+function closeAllDropdowns() {
+  document.querySelectorAll('.search-dropdown.open').forEach(dd => dd.classList.remove('open'));
+}
+
+// Close all dropdowns on outside click
+document.addEventListener('mousedown', e => {
+  if (!e.target.closest('.search-wrap')) closeAllDropdowns();
+});
+
+// Init
+addDevice();
+try {
+  const savedDevice = localStorage.getItem('inv_device');
+  if (savedDevice) loadInventoryData(savedDevice);
+  const savedComp = localStorage.getItem('inv_component');
+  if (savedComp) loadComponentInventoryData(savedComp);
+} catch(e) {}
+</script>
+</body>
+</html>

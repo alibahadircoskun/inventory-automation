@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventory Mail Generator - Giriş</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b1326;
+    --surface-low: #131b2e;
+    --surface: #171f33;
+    --surface-high: #222a3d;
+    --surface-highest: #2d3449;
+    --text: #dae2fd;
+    --text-variant: #c2c6d6;
+    --text-muted: #8c909f;
+    --text-dim: #424754;
+    --accent: #adc6ff;
+    --accent2: #4cd7f6;
+    --border: rgba(218, 226, 253, 0.08);
+    --border-active: rgba(173, 198, 255, 0.35);
+    --glass-bg: rgba(30, 41, 59, 0.8);
+    --glass-border: rgba(218, 226, 253, 0.1);
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Mesh background */
+  .bg-mesh {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background:
+      radial-gradient(at 0% 0%, rgba(173, 198, 255, 0.05) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, rgba(76, 215, 246, 0.05) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, rgba(173, 198, 255, 0.05) 0px, transparent 50%),
+      radial-gradient(at 0% 100%, rgba(76, 215, 246, 0.05) 0px, transparent 50%),
+      linear-gradient(135deg, #0b1326 0%, #131b2e 50%, #060e20 100%);
+  }
+  /* Ambient glow orbs */
+  .glow-1 {
+    position: fixed;
+    top: -10%;
+    left: -10%;
+    width: 40%;
+    height: 40%;
+    background: radial-gradient(circle, rgba(173, 198, 255, 0.06) 0%, transparent 70%);
+    border-radius: 50%;
+    filter: blur(60px);
+    pointer-events: none;
+  }
+  .glow-2 {
+    position: fixed;
+    bottom: -10%;
+    right: -10%;
+    width: 40%;
+    height: 40%;
+    background: radial-gradient(circle, rgba(76, 215, 246, 0.06) 0%, transparent 70%);
+    border-radius: 50%;
+    filter: blur(60px);
+    pointer-events: none;
+  }
+  main {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .login-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 48px;
+    max-width: 640px;
+    width: 100%;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4);
+  }
+  .login-logo-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 40px;
+  }
+  .login-logo {
+    width: 64px;
+    height: 64px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font);
+    font-size: 20px;
+    font-weight: 900;
+    color: #002e6a;
+    letter-spacing: -0.5px;
+    margin-bottom: 20px;
+    box-shadow: 0 8px 32px rgba(76, 215, 246, 0.25);
+  }
+  .login-title {
+    font-family: var(--font);
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--text);
+    margin-bottom: 8px;
+    text-align: center;
+  }
+  .login-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    font-weight: 600;
+  }
+  .user-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .user-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 28px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background: transparent;
+  }
+  .user-card:hover {
+    transform: translateY(-4px);
+    background: rgba(45, 52, 73, 0.9);
+    box-shadow: 0 0 24px rgba(173, 198, 255, 0.12);
+    border-color: rgba(173, 198, 255, 0.3);
+  }
+  .user-card:active { transform: translateY(-2px) scale(0.98); }
+  .user-avatar-ring {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    padding: 2px;
+    margin-bottom: 14px;
+    transition: transform 0.3s;
+  }
+  .user-card:hover .user-avatar-ring { transform: scale(1.05); }
+  .user-avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: var(--surface-high);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .user-name {
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  footer {
+    position: relative;
+    z-index: 1;
+    padding: 24px 48px;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    text-align: center;
+  }
+  footer span {
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  @media (max-width: 520px) {
+    body {
+      -webkit-tap-highlight-color: transparent;
+    }
+    main {
+      padding: 20px 16px;
+      align-items: flex-start;
+      padding-top: 15vh;
+    }
+    .login-card {
+      padding: 32px 20px;
+      border-radius: 24px;
+      background: rgba(23, 31, 51, 0.6);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(218, 226, 253, 0.06);
+      box-shadow:
+        0 24px 80px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+    .login-logo-wrap {
+      margin-bottom: 32px;
+    }
+    .login-logo {
+      width: 56px;
+      height: 56px;
+      font-size: 17px;
+      border-radius: 16px;
+      margin-bottom: 18px;
+      box-shadow: 0 8px 32px rgba(76, 215, 246, 0.3);
+    }
+    .login-title {
+      font-size: 22px;
+      letter-spacing: -0.3px;
+      background: linear-gradient(135deg, #dae2fd 0%, #adc6ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .login-subtitle {
+      font-size: 10px;
+      letter-spacing: 3.5px;
+      color: var(--accent2);
+      margin-top: 6px;
+    }
+    .user-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .user-card {
+      padding: 24px 12px;
+      border-radius: 20px;
+      border: 1px solid rgba(218, 226, 253, 0.05);
+      background: rgba(34, 42, 61, 0.3);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .user-card:active {
+      transform: scale(0.96);
+      background: rgba(45, 52, 73, 0.6);
+      border-color: rgba(173, 198, 255, 0.2);
+      box-shadow: 0 0 28px rgba(76, 215, 246, 0.1);
+    }
+    .user-avatar-ring {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 12px;
+    }
+    .user-avatar {
+      font-size: 18px;
+      background: rgba(34, 42, 61, 0.9);
+    }
+    .user-name {
+      font-size: 13px;
+      letter-spacing: 0.2px;
+    }
+    footer {
+      padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+      border-top: none;
+    }
+    footer span {
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      color: rgba(66, 71, 84, 0.6);
+    }
+  }
+</style>
+</head>
+<body>
+<div class="bg-mesh"></div>
+<div class="glow-1"></div>
+<div class="glow-2"></div>
+
+<main>
+  <div class="login-card">
+    <div class="login-logo-wrap">
+      <div class="login-logo">IMG</div>
+      <h1 class="login-title">Inventory Mail Generator</h1>
+      <p class="login-subtitle">Kullanıcı Seçin</p>
+    </div>
+    <div class="user-grid" id="userGrid"></div>
+  </div>
+</main>
+
+<footer>
+  <span>Inventory Mail Generator</span>
+</footer>
+
+<script>
+(async function() {
+  try {
+    const me = await fetch('/api/me').then(r => r.ok ? r.json() : null);
+    if (me) { window.location.href = '/app'; return; }
+  } catch(e) {}
+
+  const users = await fetch('/api/users').then(r => r.json());
+  const grid = document.getElementById('userGrid');
+  grid.innerHTML = users.map(u => {
+    const initials = u.display_name.slice(0, 2).toUpperCase();
+    return `<div class="user-card" onclick="login('${u.username}')">
+      <div class="user-avatar-ring">
+        <div class="user-avatar">${initials}</div>
+      </div>
+      <div class="user-name">${u.display_name}</div>
+    </div>`;
+  }).join('');
+})();
+
+async function login(username) {
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username })
+  });
+  if (res.ok) window.location.href = '/app';
+}
+</script>
+</body>
+</html>
