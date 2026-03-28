@@ -2,6 +2,19 @@ const MULTI_TYPES = new Set(['DISK','NIC']);
 const TYPES = ['CPU','RAM','DISK','NIC'];
 
 const Components = {
+  supportsHealth(type) {
+    return type === 'DISK';
+  },
+
+  makeUnit(type, unitData, fallbackName, fallbackSerial) {
+    const src = unitData || {};
+    return {
+      name: src.name !== undefined ? src.name : (fallbackName || ''),
+      serial: src.serial !== undefined ? src.serial : (fallbackSerial || ''),
+      health: Components.supportsHealth(type) && src.health !== undefined ? src.health : ''
+    };
+  },
+
   makeComp(data) {
     data = data || {};
     const qty  = data.qty  || 1;
@@ -12,11 +25,12 @@ const Components = {
       serial: data.serial || '',
       health: data.health !== undefined ? data.health : '',
       units: MULTI_TYPES.has(type)
-        ? Array.from({length:qty}, (_, i) => ({
-            name:   (data.units&&data.units[i]) ? data.units[i].name   : (data.name||''),
-            serial: (data.units&&data.units[i]) ? data.units[i].serial : (i === 0 ? (data.serial||'') : ''),
-            health: (data.units&&data.units[i]) ? data.units[i].health : ''
-          }))
+        ? Array.from({length:qty}, (_, i) => Components.makeUnit(
+            type,
+            (data.units && data.units[i]) ? data.units[i] : null,
+            data.name || '',
+            i === 0 ? (data.serial || '') : ''
+          ))
         : []
     };
   },
@@ -33,12 +47,12 @@ const Components = {
     const c = App.devices[di].components[ci];
     if (key==='type') {
       c.type=val;
-      c.units=MULTI_TYPES.has(val)?Array.from({length:c.qty},()=>({name:'',serial:'',health:''})):[];
+      c.units=MULTI_TYPES.has(val)?Array.from({length:c.qty},()=>Components.makeUnit(val)):[];
       Components.renderCompListFor(di); App.render();
     } else if (key==='qty') {
       const qty=parseInt(val)||1; c.qty=qty;
       if (MULTI_TYPES.has(c.type)) {
-        while(c.units.length<qty) c.units.push({name:'',serial:'',health:''});
+        while(c.units.length<qty) c.units.push(Components.makeUnit(c.type));
         c.units=c.units.slice(0,qty);
         Components.renderCompListFor(di);
       }
@@ -47,7 +61,13 @@ const Components = {
     App.scheduleAutoSave();
   },
   updateCompUnit(di, ci, ui, key, val) {
-    App.devices[di].components[ci].units[ui][key]=val; App.render(); App.scheduleAutoSave();
+    const comp = App.devices[di].components[ci];
+    if (key==='health' && !Components.supportsHealth(comp.type)) {
+      comp.units[ui].health='';
+    } else {
+      comp.units[ui][key]=val;
+    }
+    App.render(); App.scheduleAutoSave();
   },
 
   addTakilan(di, data) {
@@ -62,12 +82,12 @@ const Components = {
     const c = App.devices[di].takilanComponents[ci];
     if (key==='type') {
       c.type=val;
-      c.units=MULTI_TYPES.has(val)?Array.from({length:c.qty},()=>({name:'',serial:'',health:''})):[];
+      c.units=MULTI_TYPES.has(val)?Array.from({length:c.qty},()=>Components.makeUnit(val)):[];
       Components.renderTakilanListFor(di); App.render();
     } else if (key==='qty') {
       const qty=parseInt(val)||1; c.qty=qty;
       if (MULTI_TYPES.has(c.type)) {
-        while(c.units.length<qty) c.units.push({name:'',serial:'',health:''});
+        while(c.units.length<qty) c.units.push(Components.makeUnit(c.type));
         c.units=c.units.slice(0,qty);
         Components.renderTakilanListFor(di);
       }
@@ -76,14 +96,22 @@ const Components = {
     App.scheduleAutoSave();
   },
   updateTakilanUnit(di, ci, ui, key, val) {
-    App.devices[di].takilanComponents[ci].units[ui][key]=val; App.render(); App.scheduleAutoSave();
+    const comp = App.devices[di].takilanComponents[ci];
+    if (key==='health' && !Components.supportsHealth(comp.type)) {
+      comp.units[ui].health='';
+    } else {
+      comp.units[ui][key]=val;
+    }
+    App.render(); App.scheduleAutoSave();
   },
 
   renderUnitRows(c, di, ci, listType) {
     const fn  = listType === 'comp' ? 'Components.updateCompUnit' : 'Components.updateTakilanUnit';
     const pfx = listType === 'comp' ? 'compdd' : 'takilandd';
+    const showHealth = Components.supportsHealth(c.type);
+    const rowClass = showHealth ? 'comp-row-bottom' : 'comp-row-bottom comp-row-bottom--no-health';
     return c.units.map((u, ui) => `
-      <div class="comp-row-bottom">
+      <div class="${rowClass}">
         <div class="search-wrap">
           <input type="text" value="${u.name}" placeholder="Model"
             oninput="${fn}(${di},${ci},${ui},'name',this.value);Search.onCompSearch(this,'${listType}_${di}_${ci}',${ui})"
@@ -102,8 +130,8 @@ const Components = {
             autocomplete="off" style="min-width:0">
           <div class="search-dropdown" id="sn${pfx}_${di}_${ci}_${ui}"></div>
         </div>
-        <input type="number" min="0" max="100" value="${u.health}" placeholder="%"
-          style="text-align:center" oninput="${fn}(${di},${ci},${ui},'health',this.value)" title="Sağlık %">
+        ${showHealth ? `<input type="number" min="0" max="100" value="${u.health}" placeholder="%"
+          style="text-align:center" oninput="${fn}(${di},${ci},${ui},'health',this.value)" title="Sağlık %">` : ''}
       </div>`).join('');
   },
 

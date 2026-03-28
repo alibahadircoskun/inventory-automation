@@ -1,6 +1,7 @@
 const Email = {
   buildHTML(data) {
     const MULTI_TYPES = new Set(['DISK', 'NIC']);
+    const HEALTH_TYPES = new Set(['DISK']);
     const devices = Array.isArray(data?.devices) ? data.devices : [];
 
     const hasValue = (v) => v !== '' && v !== null && v !== undefined;
@@ -9,9 +10,12 @@ const Email = {
         ...(Array.isArray(d?.takilanComponents) ? d.takilanComponents : []),
         ...(Array.isArray(d?.components) ? d.components : []),
       ];
-      return allComps.some(
-        (c) => Array.isArray(c?.units) && c.units.some((u) => hasValue(u?.health))
-      );
+      return allComps.some((c) => {
+        const type = String(c?.type || '').toUpperCase();
+        return HEALTH_TYPES.has(type)
+          && Array.isArray(c?.units)
+          && c.units.some((u) => hasValue(u?.health));
+      });
     });
 
     const totalCols = hasAnyHealth ? 5 : 4;
@@ -39,17 +43,20 @@ const Email = {
       ? '<colgroup><col width="120" style="width:120px;"><col width="55" style="width:55px;"><col><col><col width="60" style="width:60px;"></colgroup>'
       : '<colgroup><col width="120" style="width:120px;"><col width="55" style="width:55px;"><col><col></colgroup>';
 
-    const buildUnitCells = (unit) => {
+    const buildUnitCells = (unit, includeHealth) => {
       const name = unit?.name || '\u2014';
       const serial = unit?.serial || '';
-      const rawHealth = unit?.health;
+      const rawHealth = includeHealth ? unit?.health : null;
       const healthVal = hasValue(rawHealth) ? parseInt(rawHealth, 10) : null;
       const hasSerial = hasValue(serial);
       const hasHealth = Number.isFinite(healthVal);
 
-      if (!hasAnyHealth) {
+      if (!hasAnyHealth || !includeHealth) {
         if (!hasSerial) {
-          return `<td colspan="2" style="${tdText}">${name}</td>`;
+          return `<td colspan="${hasAnyHealth ? 3 : 2}" style="${tdText}">${name}</td>`;
+        }
+        if (hasAnyHealth) {
+          return `<td style="${tdText}">${name}</td><td colspan="2" style="${tdSerial}">${serial}</td>`;
         }
         return `<td style="${tdText}">${name}</td><td style="${tdSerial}">${serial}</td>`;
       }
@@ -92,10 +99,11 @@ const Email = {
         const units = Array.isArray(c?.units) ? c.units : [];
         const qty = c?.qty || (units.length > 0 ? units.length : 1);
         const isMulti = MULTI_TYPES.has(type);
+        const includeHealth = HEALTH_TYPES.has(String(type).toUpperCase());
 
         if (isMulti && units.length > 0) {
           units.forEach((u, idx) => {
-            const contentCells = buildUnitCells(u);
+            const contentCells = buildUnitCells(u, includeHealth);
 
             if (idx === 0) {
               rows += `<tr>

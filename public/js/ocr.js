@@ -13,6 +13,28 @@ const OCR = {
   isProcessingQueue: false,
   sessionToken: 0,
   nextQueueId: 1,
+  lastErrorNoticeKey: '',
+  lastErrorNoticeAt: 0,
+  focusLockRequested: false,
+  focusLockActive: false,
+  focusSupported: false,
+  focusPointSupported: false,
+  focusTapSupported: false,
+  lastFocusPoint: null,
+  focusMarkerVisible: false,
+  focusMarkerLocked: false,
+  focusMarkerTimer: null,
+  focusLongPressMs: 500,
+  focusCaptureDelayMs: 280,
+  longPressTimer: null,
+  longPressTriggered: false,
+  focusGestureState: null,
+  focusGestureFrame: null,
+  focusGestureHandlers: null,
+  focusUnsupportedNotified: false,
+  captureTimerId: null,
+  captureDelayPending: false,
+  queueSheetDismissed: false,
 
   escapeHtml(value) {
     return String(value || '')
@@ -32,7 +54,466 @@ const OCR = {
   },
 
   canUseCamera() {
-    return OCR.isMobileView() && OCR.supportsCameraApi();
+    return OCR.isMobileView() && OCR.supportsCameraApi() && window.isSecureContext;
+  },
+
+  clampUnit(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.min(1, Math.max(0, parsed));
+  },
+
+  clearFocusMarkerTimer() {
+    if (OCR.focusMarkerTimer) {
+      window.clearTimeout(OCR.focusMarkerTimer);
+      OCR.focusMarkerTimer = null;
+    }
+  },
+
+  hideFocusMarker() {
+    OCR.clearFocusMarkerTimer();
+    OCR.focusMarkerVisible = false;
+    OCR.focusMarkerLocked = false;
+  },
+
+  showFocusMarker(point, options = {}) {
+    const normalized = OCR.normalizeFocusPoint(point);
+    if (!normalized) return;
+    OCR.lastFocusPoint = normalized;
+    OCR.focusMarkerVisible = true;
+    OCR.focusMarkerLocked = options.locked === true;
+    OCR.clearFocusMarkerTimer();
+    if (!OCR.focusMarkerLocked && options.keepVisible !== true) {
+      OCR.focusMarkerTimer = window.setTimeout(() => {
+        OCR.focusMarkerTimer = null;
+        if (!OCR.focusLockActive) {
+          OCR.focusMarkerVisible = false;
+          OCR.renderWorkspace();
+        }
+      }, 900);
+    }
+  },
+
+  clearLongPressTimer() {
+    if (OCR.longPressTimer) {
+      window.clearTimeout(OCR.longPressTimer);
+      OCR.longPressTimer = null;
+    }
+  },
+
+  clearCaptureTimer(resetStatus = false) {
+    if (!OCR.captureTimerId) {
+      OCR.captureDelayPending = false;
+      return;
+    }
+    window.clearTimeout(OCR.captureTimerId);
+    OCR.captureTimerId = null;
+    OCR.captureDelayPending = false;
+    if (resetStatus && OCR.processingStatus === 'capturing') {
+      OCR.processingStatus = OCR.isProcessingQueue ? 'processing' : (OCR.videoReady ? 'ready' : 'idle');
+    }
+  },
+
+  clearFocusGestureState() {
+    OCR.clearLongPressTimer();
+    OCR.longPressTriggered = false;
+    OCR.focusGestureState = null;
+  },
+
+  getCameraTrack(stream) {
+    const activeStream = stream || OCR.cameraStream;
+    if (!activeStream || typeof activeStream.getVideoTracks !== 'function') return null;
+    const tracks = activeStream.getVideoTracks();
+    return tracks && tracks.length ? tracks[0] : null;
+  },
+
+  normalizeFocusPoint(point) {
+    if (!point || typeof point !== 'object') return null;
+    return {
+      x: OCR.clampUnit(point.x),
+      y: OCR.clampUnit(point.y)
+    };
+  },
+
+  getFrameFocusPointFromEvent(event, frame) {
+    if (!event || !frame) return null;
+    const rect = frame.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    return {
+      x: OCR.clampUnit((event.clientX - rect.left) / rect.width),
+      y: OCR.clampUnit((event.clientY - rect.top) / rect.height)
+    };
+  },
+
+  mapFocusPointForTrack(point) {
+    const normalized = OCR.normalizeFocusPoint(point);
+    if (!normalized) return null;
+    if (OCR.currentFacingMode === 'user') {
+      return {
+        x: OCR.clampUnit(1 - normalized.x),
+        y: normalized.y
+      };
+    }
+    return normalized;
+  },
+
+  inspectFocusCapabilities(track) {
+    const activeTrack = track || OCR.getCameraTrack();
+    let capabilities = {};
+    try {
+      if (activeTrack && typeof activeTrack.getCapabilities === 'function') {
+        capabilities = activeTrack.getCapabilities() || {};
+      }
+    } catch (error) {
+      capabilities = {};
+    }
+
+    const focusModes = Array.isArray(capabilities.focusMode)
+      ? capabilities.focusMode.slice()
+      : [];
+    const supportsManual = focusModes.includes('manual') || focusModes.includes('locked');
+    const supportsSingleShot = focusModes.includes('single-shot');
+    const supportsContinuous = focusModes.includes('continuous') || focusModes.includes('auto');
+    const pointsCapability = capabilities.pointsOfInterest;
+    const supportsPoint = pointsCapability !== undefined && pointsCapability !== null;
+    const supportsLock = supportsManual || supportsSingleShot;
+    const supportsTap = supportsPoint || supportsSingleShot || supportsContinuous;
+
+    OCR.focusSupported = supportsLock;
+    OCR.focusPointSupported = supportsPoint;
+    OCR.focusTapSupported = supportsTap;
+
+    if (!supportsLock) {
+      OCR.focusLockActive = false;
+      OCR.focusMarkerLocked = false;
+      OCR.focusLockRequested = false;
+    }
+
+    return {
+      track: activeTrack,
+      focusModes,
+      supportsManual,
+      supportsSingleShot,
+      supportsContinuous,
+      supportsPoint,
+      supportsLock,
+      supportsTap
+    };
+  },
+
+  buildFocusConstraint(mode, point) {
+    const constraint = {};
+    if (mode) constraint.focusMode = mode;
+    if (point && OCR.focusPointSupported) {
+      constraint.pointsOfInterest = [point];
+    }
+    if (!Object.keys(constraint).length) return null;
+    return { advanced: [constraint] };
+  },
+
+  async tryApplyFocusConstraint(track, mode, point) {
+    if (!track || typeof track.applyConstraints !== 'function') return false;
+    const constraint = OCR.buildFocusConstraint(mode, point);
+    if (!constraint) return false;
+    try {
+      await track.applyConstraints(constraint);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  },
+
+  notifyFocusUnsupported(message) {
+    if (OCR.focusUnsupportedNotified) return;
+    OCR.focusUnsupportedNotified = true;
+    App.showToast(message || 'Bu kamera dokunmatik odak veya odak kilidi desteklemiyor');
+  },
+
+  async focusAtPoint(point) {
+    const normalized = OCR.normalizeFocusPoint(point);
+    if (!normalized || OCR.source !== 'camera' || !OCR.videoReady || !!OCR.capturePreview) {
+      return false;
+    }
+
+    if (OCR.focusLockActive) {
+      return OCR.setFocusLock(true, normalized, {
+        preserveRequested: true,
+        suppressFailureToast: true
+      });
+    }
+
+    OCR.showFocusMarker(normalized, { locked: false });
+
+    const info = OCR.inspectFocusCapabilities();
+    if (!info.track || !info.supportsTap) {
+      OCR.notifyFocusUnsupported();
+      OCR.renderWorkspace();
+      return false;
+    }
+
+    const pointForTrack = OCR.mapFocusPointForTrack(normalized);
+    const attempts = [];
+
+    if (info.supportsSingleShot) {
+      attempts.push({ mode: 'single-shot', point: pointForTrack });
+    }
+    if (info.supportsContinuous) {
+      attempts.push({ mode: 'continuous', point: pointForTrack });
+    }
+    if (info.supportsSingleShot) {
+      attempts.push({ mode: 'single-shot', point: null });
+    }
+    if (info.supportsContinuous) {
+      attempts.push({ mode: 'continuous', point: null });
+    }
+    if (info.supportsPoint) {
+      attempts.push({ mode: null, point: pointForTrack });
+    }
+
+    let applied = false;
+    for (const attempt of attempts) {
+      // eslint-disable-next-line no-await-in-loop
+      applied = await OCR.tryApplyFocusConstraint(info.track, attempt.mode, attempt.point);
+      if (applied) break;
+    }
+
+    OCR.renderWorkspace();
+    return applied;
+  },
+
+  async setFocusLock(enabled, point, options = {}) {
+    const normalized = OCR.normalizeFocusPoint(point) || OCR.lastFocusPoint || { x: 0.5, y: 0.5 };
+    const info = OCR.inspectFocusCapabilities();
+    const track = info.track;
+
+    if (!enabled) {
+      let released = true;
+      if (track && info.supportsContinuous) {
+        released = await OCR.tryApplyFocusConstraint(track, 'continuous', null);
+      }
+      OCR.focusLockRequested = false;
+      OCR.focusLockActive = false;
+      OCR.focusMarkerLocked = false;
+      if (OCR.lastFocusPoint) {
+        OCR.showFocusMarker(OCR.lastFocusPoint, { locked: false });
+      } else {
+        OCR.hideFocusMarker();
+      }
+      if (!released && options.suppressFailureToast !== true) {
+        App.showToast('Odak kilidi kapatılamadı');
+      }
+      if (options.skipRender !== true) OCR.renderWorkspace();
+      return released;
+    }
+
+    if (!track || !info.supportsLock) {
+      OCR.focusLockRequested = false;
+      OCR.focusLockActive = false;
+      OCR.focusMarkerLocked = false;
+      if (options.suppressUnsupportedToast !== true) {
+        OCR.notifyFocusUnsupported();
+      }
+      if (options.skipRender !== true) OCR.renderWorkspace();
+      return false;
+    }
+
+    const trackPoint = OCR.mapFocusPointForTrack(normalized);
+    const modeOrder = [];
+
+    // Prefer single-shot autofocus for lock because manual/locked often causes soft focus on mobile browsers.
+    if (info.supportsSingleShot) modeOrder.push('single-shot');
+    if (!modeOrder.length && info.focusModes.includes('locked')) modeOrder.push('locked');
+    if (!modeOrder.length && info.focusModes.includes('manual')) modeOrder.push('manual');
+
+    const attempts = [];
+    for (const mode of modeOrder) {
+      attempts.push({ mode, point: trackPoint });
+      attempts.push({ mode, point: null });
+    }
+    if (info.supportsPoint) {
+      attempts.push({ mode: null, point: trackPoint });
+    }
+
+    let locked = false;
+    for (const attempt of attempts) {
+      // eslint-disable-next-line no-await-in-loop
+      locked = await OCR.tryApplyFocusConstraint(track, attempt.mode, attempt.point);
+      if (locked) break;
+    }
+
+    if (locked) {
+      OCR.focusLockRequested = true;
+      OCR.focusLockActive = true;
+      OCR.showFocusMarker(normalized, { locked: true, keepVisible: true });
+    } else {
+      OCR.focusLockActive = false;
+      OCR.focusMarkerLocked = false;
+      if (options.preserveRequested !== true) {
+        OCR.focusLockRequested = false;
+      }
+      if (options.suppressFailureToast !== true) {
+        App.showToast('Odak kilidi bu kamerada uygulanamadı');
+      }
+    }
+
+    if (options.skipRender !== true) OCR.renderWorkspace();
+    return locked;
+  },
+
+  async toggleFocusLock(point) {
+    if (OCR.source !== 'camera' || !OCR.videoReady || OCR.processingStatus === 'opening-camera') {
+      return;
+    }
+
+    if (OCR.focusLockActive || OCR.focusLockRequested) {
+      await OCR.setFocusLock(false, point, { suppressFailureToast: true });
+      return;
+    }
+
+    const lockPoint = OCR.normalizeFocusPoint(point) || OCR.lastFocusPoint || { x: 0.5, y: 0.5 };
+    OCR.focusLockRequested = true;
+    const locked = await OCR.setFocusLock(true, lockPoint, { preserveRequested: true });
+    if (!locked) {
+      OCR.focusLockRequested = false;
+    }
+    OCR.renderWorkspace();
+  },
+
+  shouldEnableFocusGestures() {
+    return OCR.source === 'camera'
+      && OCR.isOverlayOpen()
+      && OCR.videoReady
+      && !OCR.capturePreview
+      && OCR.processingStatus !== 'opening-camera'
+      && OCR.processingStatus !== 'capturing'
+      && !OCR.getCameraPlaceholderText();
+  },
+
+  bindFocusGestures(frame) {
+    if (!frame) return;
+    if (OCR.focusGestureFrame === frame && OCR.focusGestureHandlers) return;
+
+    OCR.unbindFocusGestures();
+
+    OCR.focusGestureHandlers = {
+      down: event => OCR.handleFocusPointerDown(event),
+      move: event => OCR.handleFocusPointerMove(event),
+      up: event => OCR.handleFocusPointerUp(event),
+      cancel: event => OCR.handleFocusPointerCancel(event)
+    };
+
+    frame.addEventListener('pointerdown', OCR.focusGestureHandlers.down, { passive: false });
+    frame.addEventListener('pointermove', OCR.focusGestureHandlers.move, { passive: true });
+    frame.addEventListener('pointerup', OCR.focusGestureHandlers.up, { passive: false });
+    frame.addEventListener('pointercancel', OCR.focusGestureHandlers.cancel, { passive: true });
+    OCR.focusGestureFrame = frame;
+  },
+
+  unbindFocusGestures() {
+    const frame = OCR.focusGestureFrame;
+    const handlers = OCR.focusGestureHandlers;
+    if (frame && handlers) {
+      frame.removeEventListener('pointerdown', handlers.down);
+      frame.removeEventListener('pointermove', handlers.move);
+      frame.removeEventListener('pointerup', handlers.up);
+      frame.removeEventListener('pointercancel', handlers.cancel);
+    }
+    OCR.focusGestureFrame = null;
+    OCR.focusGestureHandlers = null;
+    OCR.clearFocusGestureState();
+  },
+
+  handleFocusPointerDown(event) {
+    if (!OCR.shouldEnableFocusGestures()) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+    const frame = OCR.focusGestureFrame;
+    const point = OCR.getFrameFocusPointFromEvent(event, frame);
+    if (!point) return;
+
+    event.preventDefault();
+
+    OCR.clearFocusGestureState();
+    OCR.focusGestureState = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+      point
+    };
+
+    if (frame && typeof frame.setPointerCapture === 'function') {
+      try {
+        frame.setPointerCapture(event.pointerId);
+      } catch (error) {
+        // ignore capture issues
+      }
+    }
+
+    OCR.longPressTimer = window.setTimeout(() => {
+      if (!OCR.focusGestureState || OCR.focusGestureState.pointerId !== event.pointerId) return;
+      OCR.longPressTimer = null;
+      OCR.longPressTriggered = true;
+      OCR.toggleFocusLock(OCR.focusGestureState.point);
+    }, OCR.focusLongPressMs);
+  },
+
+  handleFocusPointerMove(event) {
+    const state = OCR.focusGestureState;
+    if (!state || state.pointerId !== event.pointerId) return;
+
+    const dx = event.clientX - state.startX;
+    const dy = event.clientY - state.startY;
+    if (Math.hypot(dx, dy) > 16) {
+      state.moved = true;
+      OCR.clearLongPressTimer();
+    }
+  },
+
+  handleFocusPointerUp(event) {
+    const state = OCR.focusGestureState;
+    if (!state || state.pointerId !== event.pointerId) return;
+
+    event.preventDefault();
+
+    const frame = OCR.focusGestureFrame;
+    if (frame && typeof frame.releasePointerCapture === 'function') {
+      try {
+        frame.releasePointerCapture(event.pointerId);
+      } catch (error) {
+        // ignore capture issues
+      }
+    }
+
+    const dx = event.clientX - state.startX;
+    const dy = event.clientY - state.startY;
+    const moved = state.moved || Math.hypot(dx, dy) > 16;
+    const wasLongPress = OCR.longPressTriggered;
+    const point = OCR.getFrameFocusPointFromEvent(event, frame) || state.point;
+
+    OCR.clearLongPressTimer();
+    OCR.longPressTriggered = false;
+    OCR.focusGestureState = null;
+
+    if (!wasLongPress && !moved && point) {
+      if (OCR.focusLockActive) {
+        OCR.setFocusLock(true, point, {
+          preserveRequested: true,
+          suppressFailureToast: true
+        });
+      } else {
+        OCR.focusAtPoint(point);
+      }
+    }
+  },
+
+  handleFocusPointerCancel(event) {
+    const state = OCR.focusGestureState;
+    if (!state || state.pointerId !== event.pointerId) return;
+
+    OCR.clearLongPressTimer();
+    OCR.longPressTriggered = false;
+    OCR.focusGestureState = null;
   },
 
   normalizeHardwareType(value) {
@@ -48,6 +529,11 @@ const OCR = {
     return /^[A-Z0-9]{4,12}$/.test(String(value || ''));
   },
 
+  isRackLabelTag(value) {
+    const normalized = OCR.normalizeServerLabel(value);
+    return !!normalized && normalized.length <= 6 && /^(PD|SH)/.test(normalized);
+  },
+
   getResultKind(value) {
     return String(value || '').toLowerCase() === 'server_label' ? 'server_label' : 'component';
   },
@@ -56,6 +542,7 @@ const OCR = {
     return {
       hardwareType: OCR.normalizeHardwareType(hardwareType),
       serverLabel: '',
+      serviceTag: '',
       manufacturer: '',
       model: '',
       capacity: '',
@@ -76,10 +563,13 @@ const OCR = {
 
   buildFieldsFromResult(result) {
     const fields = OCR.createEmptyFields(result?.hardwareType);
+    const normalizedServerLabel = OCR.normalizeServerLabel(result?.serverLabel);
+    const normalizedServiceTag = OCR.normalizeServerLabel(result?.serviceTag);
     return {
       ...fields,
       hardwareType: OCR.normalizeHardwareType(result?.hardwareType),
-      serverLabel: OCR.normalizeServerLabel(result?.serverLabel),
+      serverLabel: normalizedServerLabel || normalizedServiceTag,
+      serviceTag: normalizedServiceTag,
       manufacturer: result?.manufacturer || '',
       model: result?.model || '',
       capacity: result?.capacity || '',
@@ -116,6 +606,21 @@ const OCR = {
     OCR.capturePreview = '';
     OCR.isProcessingQueue = false;
     OCR.source = OCR.canUseCamera() ? 'camera' : 'gallery';
+    OCR.focusLockRequested = false;
+    OCR.focusLockActive = false;
+    OCR.focusSupported = false;
+    OCR.focusPointSupported = false;
+    OCR.focusTapSupported = false;
+    OCR.lastFocusPoint = null;
+    OCR.focusMarkerVisible = false;
+    OCR.focusMarkerLocked = false;
+    OCR.focusUnsupportedNotified = false;
+    OCR.captureDelayPending = false;
+    OCR.queueSheetDismissed = false;
+    OCR.clearCaptureTimer();
+    OCR.clearFocusMarkerTimer();
+    OCR.unbindFocusGestures();
+    OCR.closeQueueSheet({ dismiss: false });
 
     const overlay = document.getElementById('cameraOverlay');
     const input = document.getElementById('ocrFileInput');
@@ -148,6 +653,21 @@ const OCR = {
     OCR.permissionMessage = '';
     OCR.capturePreview = '';
     OCR.isProcessingQueue = false;
+    OCR.focusLockRequested = false;
+    OCR.focusLockActive = false;
+    OCR.focusSupported = false;
+    OCR.focusPointSupported = false;
+    OCR.focusTapSupported = false;
+    OCR.lastFocusPoint = null;
+    OCR.focusMarkerVisible = false;
+    OCR.focusMarkerLocked = false;
+    OCR.focusUnsupportedNotified = false;
+    OCR.captureDelayPending = false;
+    OCR.queueSheetDismissed = false;
+    OCR.clearCaptureTimer();
+    OCR.clearFocusMarkerTimer();
+    OCR.unbindFocusGestures();
+    OCR.closeQueueSheet({ dismiss: false });
 
     const overlay = document.getElementById('cameraOverlay');
     const input = document.getElementById('ocrFileInput');
@@ -155,7 +675,13 @@ const OCR = {
     if (input) input.value = '';
   },
 
-  stopCameraStream() {
+  stopCameraStream(options = {}) {
+    const preserveFocusLock = options.preserveFocusLock === true;
+
+    OCR.unbindFocusGestures();
+    OCR.clearCaptureTimer(true);
+    OCR.clearFocusMarkerTimer();
+
     if (OCR.cameraStream) {
       OCR.cameraStream.getTracks().forEach(track => track.stop());
       OCR.cameraStream = null;
@@ -167,10 +693,24 @@ const OCR = {
       video.onloadedmetadata = null;
       video.oncanplay = null;
     }
+
     OCR.videoReady = false;
+    OCR.focusLockActive = false;
+    OCR.focusSupported = false;
+    OCR.focusPointSupported = false;
+    OCR.focusTapSupported = false;
+    OCR.focusMarkerVisible = false;
+    OCR.focusMarkerLocked = false;
+    OCR.captureDelayPending = false;
+    OCR.focusUnsupportedNotified = false;
+    if (!preserveFocusLock) {
+      OCR.focusLockRequested = false;
+      OCR.lastFocusPoint = null;
+    }
   },
 
   isOverlayOpen() {
+
     return !!OCR.target && document.getElementById('cameraOverlay')?.style.display !== 'none';
   },
 
@@ -244,14 +784,17 @@ const OCR = {
     if (OCR.source !== 'camera') return '';
     if (OCR.permissionMessage) return OCR.permissionMessage;
     if (OCR.processingStatus === 'opening-camera') return 'Kamera açılıyor...';
+    if (OCR.processingStatus === 'capturing' && OCR.captureDelayPending) return 'Odak sabitleniyor, çekim hazırlanıyor...';
     if (OCR.processingStatus === 'capturing') return 'Kare hazırlanıyor...';
     if (OCR.processingStatus === 'processing') return 'Metin tanıma sırasıyla işleniyor...';
     if (OCR.capturePreview) return 'Çekilen kare korunuyor. Kartları inceleyin veya canlı önizlemeye dönün.';
+    if (OCR.videoReady && OCR.focusLockActive) return 'Canlı önizleme hazır · Odak kilitli';
     if (OCR.videoReady) return 'Canlı önizleme hazır';
     return 'Kamera hazırlanıyor...';
   },
 
   getCameraPlaceholderText() {
+
     if (OCR.source !== 'camera') return '';
     if (!OCR.canUseCamera()) return 'Bu tarayıcıda kamera desteklenmiyor. Galeri modunu kullanın.';
     if (OCR.permissionMessage) return OCR.permissionMessage;
@@ -271,12 +814,19 @@ const OCR = {
         ? 'Bu kare seçili satıra uygulanmaya hazır. Gerekirse yeniden metin tanıma deneyebilir veya yeni bir kare alabilirsiniz.'
         : 'Bu kare kuyruğa eklendi. Hazır kartları tek tek veya hepsini birden taslağa aktarabilirsiniz.';
     }
+    if (OCR.mode === 'batch' && OCR.processingStatus === 'processing') {
+      return 'Metin tanıma arka planda sürüyor. Kartları gizleyip yeni kareler çekmeye devam edebilirsiniz.';
+    }
+    if (OCR.focusLockActive) {
+      return 'Odak kilitli. Dokunarak odak noktasını taşıyın, kilidi kapatmak için aynı noktaya basılı tutun.';
+    }
     return OCR.mode === 'single'
-      ? 'Etiketi çerçeveye yaklaştırın, yazılar netleşince yakalayın. Sonuç yalnızca seçili satırı günceller.'
-      : 'Telefonu dik tutun, etiketi mümkün olduğunca çerçeveye yaklaştırın. Her çekim ayrı bir inceleme kartı oluşturur.';
+      ? 'Etiketi çerçeveye yaklaştırın. Dokunarak odaklayın, odak kilidi için 500 ms basılı tutun. Sonuç yalnızca seçili satırı günceller.'
+      : 'Telefonu dik tutun, etikete dokunarak odaklayın. Odak kilidi için 500 ms basılı tutun; her çekim ayrı bir inceleme kartı oluşturur.';
   },
 
   getFooterMetaText(counts) {
+
     const deviceLabel = OCR.target ? OCR.getDeviceLabel(OCR.target.di) : 'Hedef cihaz seçili değil';
     if (OCR.mode === 'single') {
       return `${deviceLabel} için tekli metin tanıma modu. Kart onaylanınca mevcut satır güncellenir.`;
@@ -315,10 +865,27 @@ const OCR = {
       OCR.renderWorkspace();
       return;
     }
+
+    const previousSource = OCR.source;
     OCR.source = source;
     OCR.permissionMessage = '';
     OCR.capturePreview = '';
     OCR.processingStatus = OCR.isProcessingQueue ? 'processing' : 'idle';
+    OCR.clearCaptureTimer(true);
+
+    if (source === 'camera' && previousSource !== 'camera') {
+      OCR.focusLockRequested = false;
+      OCR.focusLockActive = false;
+      OCR.focusSupported = false;
+      OCR.focusPointSupported = false;
+      OCR.focusTapSupported = false;
+      OCR.lastFocusPoint = null;
+      OCR.focusMarkerVisible = false;
+      OCR.focusMarkerLocked = false;
+      OCR.focusUnsupportedNotified = false;
+      OCR.clearFocusMarkerTimer();
+      OCR.unbindFocusGestures();
+    }
 
     if (source === 'camera') {
       OCR.renderWorkspace();
@@ -333,16 +900,19 @@ const OCR = {
   async startCamera() {
     const token = OCR.sessionToken;
     if (!OCR.canUseCamera()) {
-      OCR.permissionMessage = 'Bu tarayıcı kamerayı desteklemiyor. Galeri modunu kullanın.';
+      OCR.permissionMessage = window.isSecureContext
+        ? 'Bu tarayıcı kamerayı desteklemiyor. Galeri modunu kullanın.'
+        : 'Kamera için güvenli bağlantı gerekiyor. HTTPS adresini açın veya galeri modunu kullanın.';
       OCR.processingStatus = 'error';
       OCR.renderWorkspace();
       return;
     }
 
-    OCR.stopCameraStream();
+    OCR.stopCameraStream({ preserveFocusLock: true });
     OCR.permissionMessage = '';
     OCR.processingStatus = 'opening-camera';
     OCR.videoReady = false;
+    OCR.focusUnsupportedNotified = false;
     OCR.renderWorkspace();
 
     const video = document.getElementById('cameraVideo');
@@ -364,6 +934,7 @@ const OCR = {
       }
 
       OCR.cameraStream = stream;
+      OCR.inspectFocusCapabilities(OCR.getCameraTrack(stream));
       video.dataset.facingMode = OCR.currentFacingMode;
       video.srcObject = stream;
 
@@ -379,6 +950,17 @@ const OCR = {
         OCR.videoReady = true;
         OCR.processingStatus = OCR.isProcessingQueue ? 'processing' : 'ready';
         OCR.permissionMessage = '';
+
+        OCR.inspectFocusCapabilities(OCR.getCameraTrack());
+        if (OCR.focusLockRequested && OCR.focusSupported) {
+          await OCR.setFocusLock(true, OCR.lastFocusPoint || { x: 0.5, y: 0.5 }, {
+            preserveRequested: true,
+            suppressUnsupportedToast: true,
+            suppressFailureToast: true,
+            skipRender: true
+          });
+        }
+
         OCR.renderWorkspace();
       };
 
@@ -398,6 +980,7 @@ const OCR = {
   },
 
   async switchCamera() {
+
     OCR.currentFacingMode = OCR.currentFacingMode === 'environment' ? 'user' : 'environment';
     if (OCR.source === 'camera') {
       OCR.capturePreview = '';
@@ -414,8 +997,104 @@ const OCR = {
     };
   },
 
-  buildImageFromSource(source, width, height) {
-    const dims = OCR.getScaledDimensions(width, height, 1600);
+  getMaxOcrImageDataLength() {
+    return 8 * 1024 * 1024;
+  },
+
+  normalizeJpegQuality(value, fallback) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(0.95, Math.max(0.5, parsed));
+  },
+
+  isWithinOcrPayloadBudget(imageData, maxLength) {
+    return String(imageData || '').length <= maxLength;
+  },
+
+  encodeCanvasAsJpeg(canvas, quality) {
+    return canvas.toDataURL('image/jpeg', OCR.normalizeJpegQuality(quality, 0.84));
+  },
+
+  downscaleCanvas(sourceCanvas, scaleFactor) {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(sourceCanvas.width * scaleFactor));
+    canvas.height = Math.max(1, Math.round(sourceCanvas.height * scaleFactor));
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) return sourceCanvas;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  },
+
+  encodeCanvasWithPayloadBudget(baseCanvas, options) {
+    const config = options || {};
+    const maxLength = Number(config.maxPayloadLength) || OCR.getMaxOcrImageDataLength();
+    const minQuality = OCR.normalizeJpegQuality(config.minQuality, 0.62);
+    const qualityStep = 0.08;
+    const minSide = 640;
+    const scaleFactor = 0.86;
+
+    let workingCanvas = baseCanvas;
+    let fallbackImageData = OCR.encodeCanvasAsJpeg(workingCanvas, minQuality);
+
+    while (true) {
+      let quality = OCR.normalizeJpegQuality(config.jpegQuality, 0.84);
+      while (quality >= minQuality - 0.0001) {
+        const imageData = OCR.encodeCanvasAsJpeg(workingCanvas, quality);
+        fallbackImageData = imageData;
+        if (OCR.isWithinOcrPayloadBudget(imageData, maxLength)) {
+          return {
+            imageData,
+            width: workingCanvas.width,
+            height: workingCanvas.height
+          };
+        }
+        quality = Number((quality - qualityStep).toFixed(2));
+      }
+
+      if (Math.max(workingCanvas.width, workingCanvas.height) <= minSide) {
+        return {
+          imageData: fallbackImageData,
+          width: workingCanvas.width,
+          height: workingCanvas.height
+        };
+      }
+
+      const nextCanvas = OCR.downscaleCanvas(workingCanvas, scaleFactor);
+      if (nextCanvas === workingCanvas) {
+        return {
+          imageData: fallbackImageData,
+          width: workingCanvas.width,
+          height: workingCanvas.height
+        };
+      }
+      workingCanvas = nextCanvas;
+    }
+  },
+
+  getImageProfile(sourceType) {
+    if (sourceType === 'gallery') {
+      return {
+        maxSide: 1600,
+        jpegQuality: 0.78,
+        payloadGuard: true
+      };
+    }
+    return {
+      maxSide: 1600,
+      jpegQuality: 0.78,
+      payloadGuard: false
+    };
+  },
+
+  buildImageFromSource(source, width, height, options) {
+    const profile = options || {};
+    const maxSide = Number(profile.maxSide) || 1600;
+    const jpegQuality = OCR.normalizeJpegQuality(profile.jpegQuality, 0.84);
+    const payloadGuard = profile.payloadGuard === true;
+    const maxPayloadLength = Number(profile.maxPayloadLength) || OCR.getMaxOcrImageDataLength();
+    const dims = OCR.getScaledDimensions(width, height, maxSide);
     const canvas = document.createElement('canvas');
     canvas.width = dims.width;
     canvas.height = dims.height;
@@ -423,50 +1102,94 @@ const OCR = {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(source, 0, 0, dims.width, dims.height);
-    const imageData = canvas.toDataURL('image/jpeg', 0.84);
+    const encoded = payloadGuard
+      ? OCR.encodeCanvasWithPayloadBudget(canvas, { jpegQuality, maxPayloadLength })
+      : { imageData: OCR.encodeCanvasAsJpeg(canvas, jpegQuality), width: dims.width, height: dims.height };
+    const imageData = encoded.imageData;
     return {
       imageData,
       previewUrl: imageData,
-      width: dims.width,
-      height: dims.height
+      width: encoded.width,
+      height: encoded.height
     };
   },
 
   captureFrame() {
     if (OCR.source !== 'camera') return;
-    if (!OCR.videoReady || OCR.capturePreview || OCR.processingStatus === 'opening-camera' || OCR.processingStatus === 'capturing') {
+    if (!OCR.videoReady || (OCR.mode === 'single' && OCR.capturePreview) || OCR.processingStatus === 'opening-camera' || OCR.processingStatus === 'capturing') {
       return;
     }
 
-    const video = document.getElementById('cameraVideo');
-    const canvas = document.getElementById('cameraCanvas');
-    if (!video || !canvas || !video.videoWidth || !video.videoHeight) {
-      OCR.permissionMessage = 'Canlı önizleme hazır olmadan çekim yapılamadı. Biraz daha bekleyin.';
-      OCR.renderWorkspace();
-      return;
-    }
-
+    OCR.clearCaptureTimer(false);
     OCR.processingStatus = 'capturing';
+    OCR.captureDelayPending = OCR.focusLockActive;
     OCR.renderWorkspace();
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d', { alpha: false });
-    ctx.drawImage(video, 0, 0);
+    const executeCapture = async () => {
+      OCR.captureTimerId = null;
+      OCR.captureDelayPending = false;
 
-    const prepared = OCR.buildImageFromSource(canvas, canvas.width, canvas.height);
-    OCR.capturePreview = prepared.previewUrl;
-    if (OCR.mode === 'single') {
-      OCR.queueItems = [];
+      if (OCR.source !== 'camera' || OCR.processingStatus !== 'capturing' || (OCR.mode === 'single' && OCR.capturePreview)) {
+        OCR.processingStatus = OCR.videoReady ? 'ready' : 'opening-camera';
+        OCR.renderWorkspace();
+        return;
+      }
+
+      if (OCR.focusLockActive && OCR.lastFocusPoint) {
+        await OCR.setFocusLock(true, OCR.lastFocusPoint, {
+          preserveRequested: true,
+          suppressFailureToast: true,
+          skipRender: true
+        });
+        await OCR.delay(120);
+
+        if (OCR.source !== 'camera' || OCR.processingStatus !== 'capturing' || (OCR.mode === 'single' && OCR.capturePreview)) {
+          OCR.processingStatus = OCR.videoReady ? 'ready' : 'opening-camera';
+          OCR.renderWorkspace();
+          return;
+        }
+      }
+
+      const video = document.getElementById('cameraVideo');
+      const canvas = document.getElementById('cameraCanvas');
+      if (!video || !canvas || !video.videoWidth || !video.videoHeight) {
+        OCR.permissionMessage = 'Canlı önizleme hazır olmadan çekim yapılamadı. Biraz daha bekleyin.';
+        OCR.processingStatus = OCR.videoReady ? 'ready' : 'opening-camera';
+        OCR.renderWorkspace();
+        return;
+      }
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      ctx.drawImage(video, 0, 0);
+
+      const prepared = OCR.buildImageFromSource(canvas, canvas.width, canvas.height, OCR.getImageProfile('camera'));
+      if (OCR.mode === 'single') {
+        OCR.capturePreview = prepared.previewUrl;
+        OCR.queueItems = [];
+      } else {
+        OCR.capturePreview = '';
+      }
+
+      OCR.createQueueItem(prepared, 'camera', '');
+      OCR.processingStatus = 'processing';
+      OCR.renderWorkspace();
+      OCR.processQueue();
+    };
+
+    if (OCR.focusLockActive) {
+      OCR.captureTimerId = window.setTimeout(() => {
+        void executeCapture();
+      }, OCR.focusCaptureDelayMs);
+      return;
     }
 
-    OCR.createQueueItem(prepared, 'camera', '');
-    OCR.processingStatus = 'processing';
-    OCR.renderWorkspace();
-    OCR.processQueue();
+    void executeCapture();
   },
 
   retryCapture() {
+    OCR.clearCaptureTimer(true);
     OCR.capturePreview = '';
     OCR.permissionMessage = '';
     if (OCR.source === 'camera') {
@@ -475,11 +1198,18 @@ const OCR = {
         OCR.startCamera();
         return;
       }
+      if (OCR.focusLockRequested && OCR.focusSupported) {
+        OCR.setFocusLock(true, OCR.lastFocusPoint || { x: 0.5, y: 0.5 }, {
+          preserveRequested: true,
+          suppressFailureToast: true
+        });
+      }
     }
     OCR.renderWorkspace();
   },
 
   openFilePicker() {
+
     const input = document.getElementById('ocrFileInput');
     if (!input) return;
     input.multiple = OCR.mode !== 'single';
@@ -507,7 +1237,12 @@ const OCR = {
     const objectUrl = URL.createObjectURL(file);
     try {
       const img = await OCR.loadImageElement(objectUrl);
-      return OCR.buildImageFromSource(img, img.naturalWidth || img.width, img.naturalHeight || img.height);
+      return OCR.buildImageFromSource(
+        img,
+        img.naturalWidth || img.width,
+        img.naturalHeight || img.height,
+        OCR.getImageProfile('gallery')
+      );
     } finally {
       URL.revokeObjectURL(objectUrl);
     }
@@ -584,11 +1319,14 @@ const OCR = {
 
     const token = OCR.sessionToken;
 
+    const QUEUE_CONCURRENCY = 3;
+
     try {
-      let nextItem = OCR.queueItems.find(item => item.status === 'queued');
-      while (nextItem && token === OCR.sessionToken) {
-        await OCR.processItem(nextItem, token);
-        nextItem = OCR.queueItems.find(item => item.status === 'queued');
+      while (token === OCR.sessionToken) {
+        const queued = OCR.queueItems.filter(item => item.status === 'queued');
+        if (!queued.length) break;
+        const batch = queued.slice(0, QUEUE_CONCURRENCY);
+        await Promise.all(batch.map(item => OCR.processItem(item, token)));
       }
     } finally {
       if (token === OCR.sessionToken) {
@@ -614,8 +1352,32 @@ const OCR = {
     return keys.reduce((total, key) => total + (String(result?.[key] || '').trim() ? 1 : 0), 0);
   },
 
+  getRetrySignalThreshold(hardwareType) {
+    const type = OCR.normalizeHardwareType(hardwareType);
+    if (type === 'nic') return 3;
+    if (type === 'cpu') return 3;
+    if (type === 'ram') return 3;
+    return 3;
+  },
+
+  getServerLabelOverrideSignalThreshold(hardwareType) {
+    const type = OCR.normalizeHardwareType(hardwareType);
+    if (type === 'nic') return 4;
+    if (type === 'cpu') return 4;
+    if (type === 'ram') return 4;
+    return 4;
+  },
+
   isWeakComponentResult(result) {
     return OCR.getComponentSignalCount(result) === 0;
+  },
+
+  isLowConfidenceComponentResult(result) {
+    return OCR.getComponentSignalCount(result) < OCR.getRetrySignalThreshold(result?.hardwareType);
+  },
+
+  isConfidentComponentResult(result) {
+    return !OCR.isLowConfidenceComponentResult(result);
   },
 
   normalizeResultPayload(result) {
@@ -630,16 +1392,24 @@ const OCR = {
       normalized.assetTag,
       normalized.asset_tag,
       normalized.label,
-      normalized.tag,
-      normalized.serial,
-      normalized.model,
-      normalized.partNumber
+      normalized.tag
+    ]
+      .map(value => OCR.normalizeServerLabel(value))
+      .find(value => OCR.isValidServerLabel(value)) || '';
+    const candidateServiceTag = [
+      normalized.serviceTag,
+      normalized.service_tag,
+      normalized.servicetag
     ]
       .map(value => OCR.normalizeServerLabel(value))
       .find(value => OCR.isValidServerLabel(value)) || '';
     normalized.serverLabel = OCR.isValidServerLabel(candidateServerLabel) ? candidateServerLabel : '';
+    normalized.serviceTag = OCR.isValidServerLabel(candidateServiceTag) ? candidateServiceTag : '';
     const weakComponent = OCR.isWeakComponentResult(normalized);
-    normalized.resultKind = normalized.serverLabel && (declaredResultKind === 'server_label' || weakComponent)
+    const hasServerLabel = !!normalized.serverLabel;
+    const hasServiceTag = !!normalized.serviceTag;
+    const shouldTreatAsServerLabel = hasServiceTag || (hasServerLabel && (declaredResultKind === 'server_label' || weakComponent));
+    normalized.resultKind = shouldTreatAsServerLabel
       ? 'server_label'
       : 'component';
     return normalized;
@@ -647,22 +1417,128 @@ const OCR = {
 
   shouldRunSmartRetry(result) {
     const normalized = OCR.normalizeResultPayload(result);
-    if (normalized.resultKind === 'server_label') return false;
-    if (OCR.isValidServerLabel(normalized.serverLabel)) return false;
-    return OCR.isWeakComponentResult(normalized);
+    return OCR.isLowConfidenceComponentResult(normalized);
   },
 
   pickBetterResult(currentResult, candidateResult) {
     const current = OCR.normalizeResultPayload(currentResult);
     const candidate = OCR.normalizeResultPayload(candidateResult);
-    if (candidate.resultKind === 'server_label' && OCR.isValidServerLabel(candidate.serverLabel)) return candidate;
-    if (current.resultKind !== 'server_label' && OCR.getComponentSignalCount(candidate) > OCR.getComponentSignalCount(current)) {
+    const currentSignalCount = OCR.getComponentSignalCount(current);
+    const candidateSignalCount = OCR.getComponentSignalCount(candidate);
+    const currentHasDeviceTag = OCR.isValidServerLabel(current.serverLabel) || OCR.isValidServerLabel(current.serviceTag);
+    const candidateHasDeviceTag = OCR.isValidServerLabel(candidate.serverLabel) || OCR.isValidServerLabel(candidate.serviceTag);
+    const currentIsServerLabel = OCR.getResultKind(current.resultKind) === 'server_label' && currentHasDeviceTag;
+    const candidateIsServerLabel = OCR.getResultKind(candidate.resultKind) === 'server_label' && candidateHasDeviceTag;
+    if (candidateIsServerLabel && !currentIsServerLabel) {
+      const overrideThreshold = OCR.getServerLabelOverrideSignalThreshold(current.hardwareType);
+      if (currentSignalCount >= overrideThreshold) return current;
+      return candidate;
+    }
+    if (currentIsServerLabel && !candidateIsServerLabel) {
+      const overrideThreshold = OCR.getServerLabelOverrideSignalThreshold(candidate.hardwareType);
+      if (candidateSignalCount >= overrideThreshold) return candidate;
+      return current;
+    }
+
+    if (candidateSignalCount > currentSignalCount) {
       return candidate;
     }
     return current;
   },
 
-  async callOcrApi(imageData) {
+  isTransientOcrError(error) {
+    const status = Number(error?.status);
+    if (Number.isFinite(status)) {
+      return status === 429 || status >= 500;
+    }
+
+    if (error?.name === 'AbortError') return true;
+    if (error instanceof TypeError) return true;
+
+    const message = String(error?.message || '').toLowerCase();
+    return message.includes('network')
+      || message.includes('fetch')
+      || message.includes('timeout')
+      || message.includes('failed to');
+  },
+
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  },
+
+  getOcrErrorCode(error) {
+    return String(error?.code || '').trim();
+  },
+
+  humanizeOcrError(error, context) {
+    const mode = context || 'card';
+    const code = OCR.getOcrErrorCode(error);
+    const providerStatus = Number(error?.providerStatus);
+    const rawMessage = String(error?.message || '').trim();
+    const lower = rawMessage.toLowerCase();
+
+    const isRateLimit = code === 'ocr_provider_rate_limited'
+      || providerStatus === 429
+      || lower.includes('429')
+      || lower.includes('kota')
+      || lower.includes('quota')
+      || lower.includes('rate limit');
+    if (isRateLimit) {
+      return mode === 'toast'
+        ? 'OCR kotası doldu (429). API limitine ulaşıldı, biraz sonra tekrar deneyin.'
+        : 'OCR kotası doldu (429). Biraz sonra tekrar deneyin.';
+    }
+
+    const isProviderUnreachable = code === 'ocr_provider_unreachable'
+      || lower.includes('network')
+      || lower.includes('fetch')
+      || lower.includes('timeout');
+    if (isProviderUnreachable) {
+      return mode === 'toast'
+        ? 'OCR servisine ulaşılamadı. İnternet/proxy bağlantısını kontrol edin ve tekrar deneyin.'
+        : 'OCR servisine ulaşılamadı. İnternet/proxy bağlantısını kontrol edin.';
+    }
+
+    const isProviderError = code === 'ocr_provider_error'
+      || Number.isFinite(providerStatus)
+      || lower.includes('ai api hatası');
+    if (isProviderError) {
+      const statusText = Number.isFinite(providerStatus)
+        ? ` (${providerStatus})`
+        : '';
+      return mode === 'toast'
+        ? `OCR sağlayıcısı hata verdi${statusText}. Biraz sonra tekrar deneyin.`
+        : `OCR sağlayıcısı hata verdi${statusText}.`;
+    }
+
+    if (code === 'ocr_config_missing') {
+      return mode === 'toast'
+        ? 'OCR yapılandırması eksik. AI API anahtarları tanımlı değil.'
+        : 'OCR yapılandırması eksik (API anahtarı tanımlı değil).';
+    }
+
+    if (code === 'ocr_request_invalid') {
+      return 'OCR isteği geçersiz görsel verisi içeriyor.';
+    }
+
+    return rawMessage || 'Metin tanıma işlenemedi';
+  },
+
+  notifyOcrError(error) {
+    const message = OCR.humanizeOcrError(error, 'toast');
+    if (!message) return;
+    const code = OCR.getOcrErrorCode(error) || 'generic';
+    const now = Date.now();
+    const key = `${code}:${message}`;
+    const isDuplicate = OCR.lastErrorNoticeKey === key && (now - OCR.lastErrorNoticeAt) < 12000;
+    if (isDuplicate) return;
+    OCR.lastErrorNoticeKey = key;
+    OCR.lastErrorNoticeAt = now;
+    App.showToast(message);
+  },
+
+  async callOcrApiOnce(imageData) {
+    const t0 = performance.now();
     const response = await fetch('/api/ocr', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -671,29 +1547,59 @@ const OCR = {
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || `Sunucu hatası: ${response.status}`);
+      const error = new Error(err.error || `Sunucu hatası: ${response.status}`);
+      error.status = response.status;
+      error.code = err.code || '';
+      error.providerStatus = Number(err.providerStatus || err.provider_status || NaN);
+      throw error;
     }
 
-    return response.json();
+    const result = await response.json();
+    console.log(`[OCR] API call: ${Math.round(performance.now() - t0)}ms`);
+    return result;
   },
 
-  async rotateImageData(imageData, degrees) {
-    const rotation = ((degrees % 360) + 360) % 360;
-    if (!rotation) return imageData;
+  async callOcrApi(imageData) {
+    const safeImageData = await OCR.ensureImageDataWithinPayloadBudget(imageData);
+    const maxAttempts = 2;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        return await OCR.callOcrApiOnce(safeImageData);
+      } catch (error) {
+        if (OCR.getOcrErrorCode(error) === 'ocr_provider_rate_limited') {
+          throw error;
+        }
+        const isLastAttempt = attempt >= maxAttempts - 1;
+        if (isLastAttempt || !OCR.isTransientOcrError(error)) throw error;
+        await OCR.delay(350 * (attempt + 1));
+      }
+    }
+    throw new Error('Metin tanıma isteği tamamlanamadı');
+  },
 
-    const img = await OCR.loadImageElement(imageData);
+  normalizeRotation(value) {
+    const rotation = ((Number(value) % 360) + 360) % 360;
+    return [0, 90, 180, 270].includes(rotation) ? rotation : 0;
+  },
+
+  createTransformedCanvasFromImage(img, options) {
+    const config = options || {};
     const sourceWidth = img.naturalWidth || img.width;
     const sourceHeight = img.naturalHeight || img.height;
-    if (!sourceWidth || !sourceHeight) return imageData;
+    if (!sourceWidth || !sourceHeight) return null;
 
+    const rotation = OCR.normalizeRotation(config.rotation || 0);
     const swapSides = rotation === 90 || rotation === 270;
     const canvas = document.createElement('canvas');
     canvas.width = swapSides ? sourceHeight : sourceWidth;
     canvas.height = swapSides ? sourceWidth : sourceHeight;
     const ctx = canvas.getContext('2d', { alpha: false });
-    if (!ctx) return imageData;
+    if (!ctx) return null;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
+    if (config.enhance) {
+      ctx.filter = 'grayscale(100%) contrast(165%) brightness(112%)';
+    }
 
     if (rotation === 90) {
       ctx.translate(canvas.width, 0);
@@ -704,20 +1610,68 @@ const OCR = {
     }
     ctx.rotate((rotation * Math.PI) / 180);
     ctx.drawImage(img, 0, 0);
+    ctx.filter = 'none';
+    return canvas;
+  },
 
-    return canvas.toDataURL('image/jpeg', 0.84);
+  buildImageDataFromElement(img, options) {
+    const config = options || {};
+    const canvas = OCR.createTransformedCanvasFromImage(img, config);
+    if (!canvas) return '';
+    if (config.payloadGuard) {
+      return OCR.encodeCanvasWithPayloadBudget(canvas, {
+        jpegQuality: OCR.normalizeJpegQuality(config.jpegQuality, 0.86),
+        maxPayloadLength: Number(config.maxPayloadLength) || OCR.getMaxOcrImageDataLength()
+      }).imageData;
+    }
+    return OCR.encodeCanvasAsJpeg(canvas, OCR.normalizeJpegQuality(config.jpegQuality, 0.86));
+  },
+
+  async ensureImageDataWithinPayloadBudget(imageData) {
+    const maxPayloadLength = OCR.getMaxOcrImageDataLength();
+    if (OCR.isWithinOcrPayloadBudget(imageData, maxPayloadLength)) return imageData;
+
+    try {
+      const img = await OCR.loadImageElement(imageData);
+      const compressed = OCR.buildImageDataFromElement(img, {
+        rotation: 0,
+        enhance: false,
+        jpegQuality: 0.86,
+        payloadGuard: true,
+        maxPayloadLength
+      });
+      return compressed || imageData;
+    } catch (error) {
+      return imageData;
+    }
   },
 
   async buildRetryImageVariants(imageData) {
     const variants = [];
-    for (const angle of [90, 270]) {
-      try {
-        const rotated = await OCR.rotateImageData(imageData, angle);
-        if (rotated && rotated !== imageData) variants.push(rotated);
-      } catch (error) {
-        // Ignore rotation failure and continue with available variants.
+    const seen = new Set([imageData]);
+    const maxPayloadLength = OCR.getMaxOcrImageDataLength();
+    const steps = [
+      { enhance: true, rotation: 0 },
+      { enhance: true, rotation: 90 }
+    ];
+
+    try {
+      const img = await OCR.loadImageElement(imageData);
+      for (const step of steps) {
+        const variant = OCR.buildImageDataFromElement(img, {
+          ...step,
+          jpegQuality: 0.88,
+          payloadGuard: true,
+          maxPayloadLength
+        });
+        if (!variant || seen.has(variant)) continue;
+        seen.add(variant);
+        variants.push(variant);
       }
+    } catch (error) {
+      // Ignore preprocessing failure and continue with original image retry.
     }
+
     return variants;
   },
 
@@ -725,27 +1679,34 @@ const OCR = {
     item.status = 'processing';
     item.error = '';
     OCR.renderWorkspace();
+    const itemStart = performance.now();
+    const readyCountBefore = OCR.queueItems.reduce((total, queuedItem) => (
+      total + (queuedItem.status === 'ready' ? 1 : 0)
+    ), 0);
 
     try {
       const firstResult = OCR.normalizeResultPayload(await OCR.callOcrApi(item.imageData));
       if (token !== OCR.sessionToken) return;
 
       let result = firstResult;
+
       if (OCR.shouldRunSmartRetry(firstResult)) {
+        if (token !== OCR.sessionToken) return;
         const retryImages = await OCR.buildRetryImageVariants(item.imageData);
-        for (const retryImage of retryImages) {
-          if (token !== OCR.sessionToken) return;
-          try {
-            const retryResult = await OCR.callOcrApi(retryImage);
-            if (token !== OCR.sessionToken) return;
-            result = OCR.pickBetterResult(result, retryResult);
-            if (result.resultKind === 'server_label' && OCR.isValidServerLabel(result.serverLabel)) break;
-            if (!OCR.isWeakComponentResult(result)) break;
-          } catch (retryError) {
-            // Keep the best successful result and continue trying the remaining variants.
+        // Fire retry variants in parallel (no duplicate of original image)
+        const retryResults = await Promise.allSettled(
+          retryImages.map(img => OCR.callOcrApi(img))
+        );
+        if (token !== OCR.sessionToken) return;
+        for (const settled of retryResults) {
+          if (settled.status === 'fulfilled') {
+            result = OCR.pickBetterResult(result, settled.value);
           }
         }
       }
+
+      const retried = result !== firstResult;
+      console.log(`[OCR] processItem done: ${Math.round(performance.now() - itemStart)}ms (retried=${retried}, signals=${OCR.getComponentSignalCount(result)})`);
 
       item.result = result;
       item.fields = OCR.buildFieldsFromResult(result);
@@ -753,14 +1714,15 @@ const OCR = {
       item.error = '';
 
       // Auto-open queue sheet on mobile when first item is ready
-      if (OCR.isMobileSheet()) {
+      if (OCR.isMobileSheet() && readyCountBefore === 0 && !OCR.queueSheetDismissed) {
         const panel = document.getElementById('ocrQueuePanel') || document.querySelector('.ocr-queue-panel');
         if (panel) panel.classList.add('is-sheet-open');
       }
     } catch (error) {
       if (token !== OCR.sessionToken) return;
       item.status = 'error';
-      item.error = error.message || 'Metin tanıma işlenemedi';
+      item.error = OCR.humanizeOcrError(error, 'card');
+      OCR.notifyOcrError(error);
     }
 
     OCR.renderWorkspace();
@@ -849,16 +1811,16 @@ const OCR = {
     item.error = '';
     item.result = null;
     item.fields = OCR.createEmptyFields(item.fields?.hardwareType || 'disk');
-    if (item.source === 'camera') {
+    if (item.source === 'camera' && OCR.mode === 'single') {
       OCR.capturePreview = item.previewUrl;
     }
     OCR.renderWorkspace();
     OCR.processQueue();
   },
 
-  skipItem(id) {
+  deleteItem(id) {
     const item = OCR.getItemById(id);
-    if (!item) return;
+    if (!item || item.status === 'processing') return;
 
     if (OCR.mode === 'single') {
       OCR.queueItems = [];
@@ -870,17 +1832,18 @@ const OCR = {
       return;
     }
 
-    item.status = 'skipped';
+    OCR.queueItems = OCR.queueItems.filter(queueItem => queueItem.id !== item.id);
 
-    // On mobile batch mode, close sheet and reset camera for next capture
-    if (OCR.isMobileSheet()) {
-      OCR.closeQueueSheet();
-      if (OCR.source === 'camera' && OCR.capturePreview) {
-        OCR.retryCapture();
-      }
+    if (OCR.source === 'camera' && OCR.capturePreview && item.previewUrl === OCR.capturePreview) {
+      OCR.retryCapture();
+      return;
     }
 
     OCR.renderWorkspace();
+  },
+
+  skipItem(id) {
+    OCR.deleteItem(id);
   },
 
   exitCardView() {
@@ -895,6 +1858,7 @@ const OCR = {
     return {
       hardwareType: OCR.normalizeHardwareType(fields.hardwareType),
       serverLabel: OCR.normalizeServerLabel(fields.serverLabel),
+      serviceTag: OCR.normalizeServerLabel(fields.serviceTag),
       manufacturer: fields.manufacturer?.trim() || '',
       model: fields.model?.trim() || '',
       capacity: fields.capacity?.trim() || '',
@@ -976,6 +1940,24 @@ const OCR = {
     return '';
   },
 
+  normalizeDiskBusToken(value) {
+    const text = OCR.normalizeNameWhitespace(value).toUpperCase();
+    if (!text) return '';
+    if (/\bNVME\b|\bNVM[\s-]?E\b/.test(text)) return 'NVME';
+    if (/\bSATA\b/.test(text)) return 'SATA';
+    if (/\bSAS\b/.test(text)) return 'SAS';
+    if (/\bSSD\b/.test(text)) return 'SSD';
+    return '';
+  },
+
+  inferDiskBusFromModelCode(value) {
+    const model = OCR.normalizeNameWhitespace(value);
+    if (!model || !OCR.looksOpaquePartCode(model)) return '';
+    const compact = model.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    if (!compact) return '';
+    return compact.endsWith('SS') ? 'SAS' : '';
+  },
+
   looksOpaquePartCode(value) {
     const text = OCR.normalizeNameWhitespace(value);
     if (!text) return false;
@@ -1007,16 +1989,23 @@ const OCR = {
   },
 
   extractDiskBusToken(vals, ocrResult) {
+    const directBus = [vals?.interface, ocrResult?.interface]
+      .map(value => OCR.normalizeDiskBusToken(value))
+      .find(Boolean);
+    if (directBus) return directBus;
+
     const rawText = [vals?.model, vals?.partNumber, ocrResult?.model, ocrResult?.partNumber, ocrResult?.raw]
       .filter(Boolean)
       .join(' ')
       .toUpperCase();
-    if (!rawText) return '';
-    if (/\bNVME\b|\bNVM-E\b/.test(rawText)) return 'NVME';
-    if (/\bSATA\b/.test(rawText)) return 'SATA';
-    if (/\bSAS\b/.test(rawText)) return 'SAS';
-    if (/\bSSD\b/.test(rawText)) return 'SSD';
-    return '';
+    if (rawText) {
+      const tokenizedBus = OCR.normalizeDiskBusToken(rawText);
+      if (tokenizedBus) return tokenizedBus;
+    }
+
+    return OCR.inferDiskBusFromModelCode(vals?.model)
+      || OCR.inferDiskBusFromModelCode(ocrResult?.model)
+      || '';
   },
 
   cleanDiskModelForFallback(model, capacityToken) {
@@ -1236,19 +2225,42 @@ const OCR = {
     let toastMessage = '';
 
     if (resultKind === 'server_label') {
-      const serverLabel = OCR.normalizeServerLabel(vals.serverLabel || item.result?.serverLabel);
-      if (!OCR.isValidServerLabel(serverLabel)) {
-        App.showToast('Server etiketi geçerli değil. Lütfen 4-12 karakter harf/rakam girin.');
+      const serverTagValue = OCR.normalizeServerLabel(
+        vals.serverLabel || item.result?.serverLabel || vals.serviceTag || item.result?.serviceTag
+      );
+      if (!OCR.isValidServerLabel(serverTagValue)) {
+        App.showToast('Tag değeri geçerli değil. Lütfen 4-12 karakter harf/rakam girin.');
         return;
       }
 
-      device.etiket = serverLabel;
-      if (assetMatchByTag?.model) device.model = assetMatchByTag.model;
-      if (assetMatchByTag?.serial) device.seri = assetMatchByTag.serial;
+      const rackLabel = OCR.isRackLabelTag(serverTagValue);
+      const inventoryModel = OCR.normalizeNameWhitespace(assetMatchByTag?.model || '');
+      const ocrModel = OCR.normalizeNameWhitespace(vals.model || item.result?.model || '');
+      const inventorySerial = String(assetMatchByTag?.serial || '').trim();
+
+      if (rackLabel) {
+        device.etiket = serverTagValue;
+        if (!device.seri && inventorySerial) device.seri = inventorySerial;
+      } else {
+        device.seri = serverTagValue;
+      }
+
+      if (!device.model && inventoryModel) {
+        device.model = inventoryModel;
+      } else if (!device.model && ocrModel) {
+        device.model = ocrModel;
+      }
+
       needsDeviceRefresh = true;
-      toastMessage = assetMatchByTag
-        ? 'Server etiketi uygulandı ve envanterden model/seri güncellendi'
-        : 'Server etiketi uygulandı';
+      if (rackLabel) {
+        toastMessage = assetMatchByTag
+          ? 'Rack etiketi ETIKET alanına uygulandı, model/seri envanterden doğrulandı'
+          : 'Rack etiketi ETIKET alanına uygulandı';
+      } else {
+        toastMessage = assetMatchByTag
+          ? 'Uyarı: Tag değeri SERI NO alanına uygulandı, model envanterden doğrulandı'
+          : 'Uyarı: Tag değeri SERI NO alanına uygulandı (PD/SH öneki yok)';
+      }
     } else {
       const qty = OCR.normalizeQty(item.qty);
       const typeMap = { ram: 'RAM', disk: 'DISK', nic: 'NIC', cpu: 'CPU' };
@@ -1382,11 +2394,12 @@ const OCR = {
     const showQtyField = showFields && OCR.mode === 'batch' && !isServerLabel;
     const hardwareType = OCR.normalizeHardwareType(item.fields?.hardwareType);
     const qtyValue = OCR.normalizeQty(item.qty);
+    const canDelete = item.status !== 'processing';
     const fieldRows = showFields
       ? (isServerLabel
         ? `
       <div class="ocr-card-field full-width">
-        <label>Server Etiketi</label>
+        <label>Server Tag / Service Tag</label>
         <input type="text" value="${OCR.escapeHtml(item.fields.serverLabel)}" ${canEdit ? '' : 'disabled'}
           oninput="OCR.updateItemField(${item.id},'serverLabel',this.value)">
       </div>
@@ -1409,12 +2422,12 @@ const OCR = {
       actionsHtml = `
         <button class="btn btn-success" onclick="OCR.applyItem(${item.id})">Uygula</button>
         <button class="btn btn-ghost" onclick="OCR.retryItem(${item.id})">Tekrar Metin Tanıma</button>
-        <button class="btn btn-ghost" onclick="OCR.skipItem(${item.id})">Atla</button>
+        <button class="btn btn-danger" onclick="OCR.deleteItem(${item.id})">Sil</button>
       `;
     } else if (item.status === 'error') {
       actionsHtml = `
         <button class="btn btn-accent2" onclick="OCR.retryItem(${item.id})">Tekrar Dene</button>
-        <button class="btn btn-ghost" onclick="OCR.skipItem(${item.id})">Atla</button>
+        <button class="btn btn-danger" onclick="OCR.deleteItem(${item.id})">Sil</button>
       `;
     } else if (item.status === 'processing' || item.status === 'queued') {
       actionsHtml = `<button class="btn btn-ghost" disabled>${statusTextMap[item.status]}</button>`;
@@ -1449,19 +2462,19 @@ const OCR = {
                 <button class="ocr-card-collapse" type="button" onclick="OCR.toggleItemCollapse(${item.id})" title="${isCollapsed ? 'Kartı genişlet' : 'Kartı daralt'}" aria-expanded="${isCollapsed ? 'false' : 'true'}">
                   <span class="material-symbols-outlined">${isCollapsed ? 'expand_more' : 'expand_less'}</span>
                 </button>` : ''}
-                <button class="ocr-card-close" type="button" onclick="OCR.exitCardView()" title="Kartı kapat">
+                <button class="ocr-card-close${canDelete ? '' : ' is-disabled'}" type="button" onclick="OCR.deleteItem(${item.id})" title="${canDelete ? 'Kartı sil' : 'Kart işlenirken silinemez'}" aria-label="${canDelete ? 'Kartı sil' : 'Kart işlenirken silinemez'}" ${canDelete ? '' : 'disabled'}>
                   <span class="material-symbols-outlined">close</span>
                 </button>
               </div>
             </div>
             <div class="ocr-card-sub">${isServerLabel
-              ? 'Uygulandığında cihaz ETİKET alanı güncellenir.'
+              ? 'Uygulandığında tag değeri kurala göre ETIKET veya SERI NO alanına yazılır.'
               : (OCR.mode === 'single'
                 ? 'Bu kart seçili satıra uygulanır.'
                 : `Uygulandığında ${OCR.escapeHtml(OCR.getDestinationLabel(OCR.batchDestination))} listesine eklenir.`)}</div>
             <div class="ocr-badges">
               <span class="ocr-badge status-${item.status}">${statusTextMap[item.status]}</span>
-              ${showFields ? `<span class="ocr-badge type">${isServerLabel ? 'Server Etiketi' : hardwareTypeLabels[hardwareType]}</span>` : ''}
+              ${showFields ? `<span class="ocr-badge type">${isServerLabel ? 'Server Tag' : hardwareTypeLabels[hardwareType]}</span>` : ''}
             </div>
             ${item.error ? `<div class="ocr-card-error">${OCR.escapeHtml(item.error)}</div>` : ''}
           </div>
@@ -1524,6 +2537,8 @@ const OCR = {
     const resetPreviewBtn = document.getElementById('ocrResetPreviewBtn');
     const applyAllBtn = document.getElementById('ocrApplyAllBtn');
     const galleryActionBtn = document.getElementById('ocrGalleryActionBtn');
+    const focusLockBtn = document.getElementById('ocrFocusLockBtn');
+    const focusMarker = document.getElementById('ocrFocusMarker');
     const video = document.getElementById('cameraVideo');
     const still = document.getElementById('cameraStillPreview');
 
@@ -1577,6 +2592,16 @@ const OCR = {
     if (cameraFrame) {
       cameraFrame.classList.toggle('is-frozen', !!OCR.capturePreview);
       cameraFrame.classList.toggle('is-blocked', !!OCR.getCameraPlaceholderText());
+      cameraFrame.classList.toggle('is-focus-locked', !!OCR.focusLockActive);
+    }
+    if (focusMarker) {
+      if (OCR.lastFocusPoint) {
+        focusMarker.style.left = (OCR.lastFocusPoint.x * 100).toFixed(2) + '%';
+        focusMarker.style.top = (OCR.lastFocusPoint.y * 100).toFixed(2) + '%';
+      }
+      const showMarker = OCR.source === 'camera' && !!OCR.lastFocusPoint && OCR.focusMarkerVisible && !OCR.capturePreview;
+      focusMarker.classList.toggle('is-visible', showMarker);
+      focusMarker.classList.toggle('is-locked', showMarker && OCR.focusLockActive);
     }
     if (stagePlaceholder) {
       stagePlaceholder.textContent = OCR.getCameraPlaceholderText();
@@ -1628,6 +2653,25 @@ const OCR = {
       const galleryLabel = galleryActionBtn.querySelector('.ocr-btn-label');
       if (galleryLabel) galleryLabel.textContent = 'Fotoğraf Seç';
     }
+    if (focusLockBtn) {
+      const focusLockLabel = focusLockBtn.querySelector('.ocr-btn-label');
+      const focusLockIcon = focusLockBtn.querySelector('.ocr-btn-icon');
+      const showFocusLockBtn = OCR.source === 'camera' && cameraAllowed && OCR.focusSupported;
+      focusLockBtn.style.display = showFocusLockBtn ? 'inline-flex' : 'none';
+      focusLockBtn.classList.toggle('is-active', OCR.focusLockActive);
+      if (focusLockLabel) {
+        focusLockLabel.textContent = OCR.focusLockActive ? 'Odak Kilitli' : 'Odak Kilidi';
+      }
+      if (focusLockIcon) {
+        focusLockIcon.textContent = OCR.focusLockActive ? 'lock' : 'center_focus_strong';
+      }
+      focusLockBtn.disabled = !isOpen
+        || OCR.source !== 'camera'
+        || !OCR.videoReady
+        || OCR.processingStatus === 'opening-camera'
+        || OCR.processingStatus === 'capturing';
+      focusLockBtn.title = OCR.focusLockActive ? 'Odak kilidini kapat' : 'Odak kilidini aç';
+    }
     if (captureBtn) {
       captureBtn.style.display = OCR.source === 'camera' ? 'inline-flex' : 'none';
       const captureLabel = captureBtn.querySelector('.ocr-btn-label');
@@ -1657,6 +2701,12 @@ const OCR = {
       applyAllBtn.style.display = OCR.mode === 'batch' && counts.ready ? 'inline-flex' : 'none';
       applyAllBtn.disabled = !counts.ready;
     }
+
+    if (OCR.shouldEnableFocusGestures()) {
+      OCR.bindFocusGestures(cameraFrame);
+    } else {
+      OCR.unbindFocusGestures();
+    }
   },
 
   setBatchDestination(value) {
@@ -1671,26 +2721,42 @@ const OCR = {
   toggleQueueSheet() {
     const panel = document.getElementById('ocrQueuePanel') || document.querySelector('.ocr-queue-panel');
     if (!panel) return;
-    panel.classList.toggle('is-sheet-open');
+    const isOpen = panel.classList.toggle('is-sheet-open');
+    OCR.queueSheetDismissed = !isOpen;
   },
 
-  closeQueueSheet() {
+  closeQueueSheet(options = {}) {
     const panel = document.getElementById('ocrQueuePanel') || document.querySelector('.ocr-queue-panel');
     if (panel) panel.classList.remove('is-sheet-open');
+    if (options.dismiss !== false) {
+      OCR.queueSheetDismissed = true;
+    }
   },
 
   updateQueueToggle() {
     const toggle = document.getElementById('ocrQueueToggle');
+    const iconEl = document.getElementById('ocrQueueToggleIcon');
     const countEl = document.getElementById('ocrQueueToggleCount');
     const labelEl = document.getElementById('ocrQueueToggleLabel');
     if (!toggle) return;
 
     const counts = OCR.getQueueCounts();
+    const showToggle = OCR.isMobileSheet() && counts.total > 0;
+    const panel = document.getElementById('ocrQueuePanel') || document.querySelector('.ocr-queue-panel');
+    const isSheetOpen = !!panel?.classList.contains('is-sheet-open');
     if (countEl) countEl.textContent = counts.total;
+    if (iconEl) iconEl.textContent = isSheetOpen ? 'expand_more' : 'inventory_2';
     if (labelEl) {
-      labelEl.textContent = counts.ready ? `${counts.ready} hazır` : 'Kuyruk';
+      labelEl.textContent = isSheetOpen
+        ? 'Kartları Gizle'
+        : (counts.ready ? `${counts.ready} hazır` : 'Kuyruk');
     }
+    toggle.classList.toggle('is-open', isSheetOpen);
     toggle.classList.toggle('has-ready', counts.ready > 0);
-    toggle.style.display = counts.total > 0 ? 'flex' : 'none';
+    toggle.style.display = showToggle ? 'flex' : 'none';
+    if (!showToggle) {
+      OCR.closeQueueSheet({ dismiss: false });
+      OCR.queueSheetDismissed = false;
+    }
   }
 };

@@ -85,6 +85,21 @@ function initDB() {
       search_text TEXT DEFAULT ''
     );
 
+    CREATE TABLE IF NOT EXISTS ai_usage_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT DEFAULT (datetime('now')),
+      model TEXT,
+      api_key_index INTEGER,
+      key_type TEXT,
+      prompt_tokens INTEGER DEFAULT 0,
+      completion_tokens INTEGER DEFAULT 0,
+      total_tokens INTEGER DEFAULT 0,
+      success INTEGER DEFAULT 1,
+      status_code INTEGER,
+      response_time_ms INTEGER,
+      username TEXT DEFAULT ''
+    );
+
     CREATE TABLE IF NOT EXISTS inventory_components (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT DEFAULT '',

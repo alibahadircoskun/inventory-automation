@@ -459,6 +459,9 @@ select {
 .comp-row-bottom--single {
   grid-template-columns: 1fr;
 }
+.comp-row-bottom--no-health {
+  grid-template-columns: 1fr 1fr;
+}
 
 .comp-row input, .comp-row select {
   font-size: 12px;
@@ -818,6 +821,37 @@ select {
   border-bottom: 1px solid var(--border);
 }
 
+.ocr-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.ocr-header-close-icon {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid rgba(173, 198, 255, 0.2);
+  background: rgba(6, 14, 32, 0.6);
+  color: var(--text-muted);
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+
+.ocr-header-close-icon .material-symbols-outlined {
+  font-size: 19px;
+}
+
+.ocr-header-close-icon:hover {
+  color: var(--text);
+  border-color: rgba(173, 198, 255, 0.35);
+  background: rgba(19, 27, 46, 0.9);
+}
+
 .ocr-kicker {
   font-family: var(--font);
   font-size: 10px;
@@ -945,6 +979,17 @@ select {
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.03),
     0 18px 60px rgba(0, 0, 0, 0.4);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ocr-camera-frame.is-focus-locked {
+  border-color: rgba(76, 215, 246, 0.55);
+  box-shadow:
+    inset 0 0 0 1px rgba(76, 215, 246, 0.2),
+    0 18px 60px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(76, 215, 246, 0.22);
 }
 
 #cameraVideo,
@@ -978,6 +1023,64 @@ select {
   display: none;
 }
 
+.ocr-focus-marker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 0 0 999px rgba(6, 14, 32, 0.02),
+    0 0 0 1px rgba(2, 6, 23, 0.4) inset;
+  transform: translate(-50%, -50%) scale(0.86);
+  opacity: 0;
+  z-index: 5;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ocr-focus-marker::before,
+.ocr-focus-marker::after {
+  content: '';
+  position: absolute;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.ocr-focus-marker::before {
+  left: 50%;
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.ocr-focus-marker::after {
+  top: 50%;
+  left: 12px;
+  right: 12px;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.ocr-focus-marker.is-visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.ocr-focus-marker.is-locked {
+  border-color: rgba(76, 215, 246, 0.95);
+  box-shadow:
+    0 0 0 1px rgba(76, 215, 246, 0.45),
+    0 0 36px rgba(76, 215, 246, 0.32);
+}
+
+.ocr-focus-marker.is-locked::before,
+.ocr-focus-marker.is-locked::after {
+  background: rgba(76, 215, 246, 0.9);
+}
+
 .ocr-stage-placeholder {
   position: absolute;
   inset: 0;
@@ -992,6 +1095,7 @@ select {
   font-family: var(--font);
   font-size: 14px;
   line-height: 1.6;
+  pointer-events: none;
 }
 
 .ocr-stage-placeholder:empty {
@@ -1033,6 +1137,7 @@ select {
   text-align: center;
   font-size: 12px;
   font-weight: 600;
+  pointer-events: none;
 }
 
 .ocr-stage-status span {
@@ -1116,6 +1221,30 @@ select {
   font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.4px;
+}
+
+.ocr-queue-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ocr-queue-minimize {
+  display: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(173, 198, 255, 0.2);
+  background: rgba(6, 14, 32, 0.6);
+  color: var(--text-muted);
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.ocr-queue-minimize .material-symbols-outlined {
+  font-size: 18px;
 }
 
 .ocr-queue-stats {
@@ -1249,6 +1378,16 @@ select {
   color: var(--text);
   border-color: rgba(173, 198, 255, 0.35);
   background: rgba(19, 27, 46, 0.9);
+}
+
+.ocr-card-close:disabled,
+.ocr-card-close.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  color: rgba(218, 226, 253, 0.4);
+  border-color: rgba(173, 198, 255, 0.14);
+  background: rgba(6, 14, 32, 0.45);
 }
 
 .ocr-card-sub {
@@ -1427,6 +1566,12 @@ select {
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.ocr-footer-actions #ocrFocusLockBtn.is-active {
+  border-color: rgba(76, 215, 246, 0.5);
+  background: linear-gradient(135deg, rgba(76, 215, 246, 0.24), rgba(173, 198, 255, 0.2));
+  color: #e9faff;
 }
 
 /* ============================================
@@ -1820,6 +1965,9 @@ body::after {
   .comp-row-bottom--single {
     grid-template-columns: 1fr;
   }
+  .comp-row-bottom--no-health {
+    grid-template-columns: 1fr 1fr;
+  }
   .comp-row input, .comp-row select {
     font-size: 13px;
     padding: 10px 12px;
@@ -1991,6 +2139,16 @@ body::after {
     margin-bottom: 2px;
     color: var(--accent2);
   }
+  .ocr-header-actions {
+    gap: 6px;
+  }
+  .ocr-header-close-icon {
+    width: 34px;
+    height: 34px;
+  }
+  .ocr-header-close-icon .material-symbols-outlined {
+    font-size: 18px;
+  }
 
   /* ---- STAGE PANEL ---- */
   .ocr-stage-panel {
@@ -2125,6 +2283,7 @@ body::after {
     transform: scale(0.92);
   }
   .ocr-footer-actions #ocrSwitchCameraBtn,
+  .ocr-footer-actions #ocrFocusLockBtn,
   .ocr-footer-actions #ocrResetPreviewBtn,
   .ocr-footer-actions #ocrGalleryActionBtn {
     flex: 0 0 auto;
@@ -2140,9 +2299,10 @@ body::after {
   /* Button ordering */
   .ocr-footer-actions #ocrSwitchCameraBtn { order: 1; }
   .ocr-footer-actions #ocrGalleryActionBtn { order: 2; }
-  .ocr-footer-actions #ocrCaptureBtn { order: 3; }
-  .ocr-footer-actions #ocrResetPreviewBtn { order: 4; }
-  .ocr-footer-actions #ocrApplyAllBtn { order: 5; }
+  .ocr-footer-actions #ocrFocusLockBtn { order: 3; }
+  .ocr-footer-actions #ocrCaptureBtn { order: 4; }
+  .ocr-footer-actions #ocrResetPreviewBtn { order: 5; }
+  .ocr-footer-actions #ocrApplyAllBtn { order: 6; }
 
   /* Capture: Hero button with glow */
   .ocr-footer-actions #ocrCaptureBtn {
@@ -2205,6 +2365,23 @@ body::after {
     padding: 16px 18px 14px;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+  }
+  .ocr-queue-header-actions {
+    gap: 10px;
+    align-items: center;
+  }
+  .ocr-queue-minimize {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    border-color: rgba(218, 226, 253, 0.18);
+    background: rgba(6, 14, 32, 0.82);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .ocr-queue-minimize .material-symbols-outlined {
+    font-size: 19px;
   }
   .ocr-queue-header::before {
     content: '';

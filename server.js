@@ -30,6 +30,7 @@ app.use('/api', require('./routes/auth'));
 app.use('/api/sessions', require('./routes/sessions'));
 app.use('/api/inventory', require('./routes/inventory'));
 app.use('/api/ocr', require('./routes/ocr'));
+app.use('/api/usage', require('./routes/usage'));
 
 // SPA fallback
 app.get('/', (req, res) => {

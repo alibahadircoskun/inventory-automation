@@ -100,12 +100,14 @@
         <div class="ocr-kicker" id="ocrHeaderKicker" style="display:none"></div>
         <div class="ocr-header-title" id="ocrHeaderTitle">Metin Tanıma</div>
       </div>
-      <button class="btn btn-ghost" onclick="OCR.closeCamera()">Kapat</button>
+      <div class="ocr-header-actions">
+        <button class="btn btn-ghost" type="button" onclick="OCR.closeCamera()" title="OCR ekranını kapat" aria-label="OCR ekranını kapat">Kapat</button>
+      </div>
     </div>
 
     <div class="ocr-body">
       <button class="ocr-queue-toggle" id="ocrQueueToggle" onclick="OCR.toggleQueueSheet()">
-        <span class="material-symbols-outlined">inventory_2</span>
+        <span class="material-symbols-outlined" id="ocrQueueToggleIcon">inventory_2</span>
         <span id="ocrQueueToggleLabel">Kuyruk</span>
         <span class="ocr-queue-toggle-count" id="ocrQueueToggleCount">0</span>
       </button>
@@ -128,6 +130,7 @@
             <div class="ocr-camera-frame" id="ocrCameraFrame">
               <video id="cameraVideo" autoplay playsinline muted></video>
               <img id="cameraStillPreview" alt="Yakalanan metin tanıma önizlemesi">
+              <div class="ocr-focus-marker" id="ocrFocusMarker" aria-hidden="true"></div>
               <div class="ocr-stage-placeholder" id="ocrStagePlaceholder"></div>
               <div class="ocr-framing-guide">
                 <div class="ocr-framing-guide-label">Etiketi çerçeve içine yerleştirin</div>
@@ -154,7 +157,12 @@
             <div class="ocr-kicker">İnceleme Kuyruğu</div>
             <div class="ocr-queue-title" id="ocrQueueTitle">Henüz fotoğraf yok</div>
           </div>
-          <div class="ocr-queue-stats" id="ocrQueueStats"></div>
+          <div class="ocr-queue-header-actions">
+            <div class="ocr-queue-stats" id="ocrQueueStats"></div>
+            <button class="ocr-queue-minimize" type="button" onclick="event.stopPropagation(); OCR.closeQueueSheet({ dismiss: true });" title="Kartları gizle" aria-label="Kartları gizle">
+              <span class="material-symbols-outlined">expand_more</span>
+            </button>
+          </div>
         </div>
         <div class="ocr-queue-list" id="ocrQueueList"></div>
       </div>
@@ -165,6 +173,7 @@
       <div class="ocr-footer-actions">
         <button class="btn btn-ghost" id="ocrGalleryActionBtn" onclick="OCR.openFilePicker()"><span class="material-symbols-outlined ocr-btn-icon">photo_library</span><span class="ocr-btn-label">Fotoğraf Seç</span></button>
         <button class="btn btn-ghost" id="ocrSwitchCameraBtn" onclick="OCR.switchCamera()"><span class="material-symbols-outlined ocr-btn-icon">flip_camera_ios</span><span class="ocr-btn-label">Kamerayı Değiştir</span></button>
+        <button class="btn btn-ghost" id="ocrFocusLockBtn" onclick="OCR.toggleFocusLock()"><span class="material-symbols-outlined ocr-btn-icon">center_focus_strong</span><span class="ocr-btn-label">Odak Kilidi</span></button>
         <button class="btn btn-ghost" id="ocrResetPreviewBtn" onclick="OCR.retryCapture()"><span class="material-symbols-outlined ocr-btn-icon">videocam</span><span class="ocr-btn-label">Canlı Önizleme</span></button>
         <button class="btn btn-success" id="ocrApplyAllBtn" onclick="OCR.applyAllReady()"><span class="material-symbols-outlined ocr-btn-icon">done_all</span><span class="ocr-btn-label">Hazırları Uygula</span></button>
         <button class="btn btn-accent2" id="ocrCaptureBtn" onclick="OCR.captureFrame()"><span class="material-symbols-outlined ocr-btn-icon">photo_camera</span><span class="ocr-btn-label">Yakala</span></button>

@@ -2,7 +2,7 @@
 
 Internal web app for building inventory handoff emails from device lists, component lookups, and OCR-assisted label capture.
 
-The app runs as a small Express server with a SQLite database, serves a login screen plus editor UI, and can call an OpenAI-compatible vision endpoint to read hardware labels from camera or gallery images.
+The app runs as a small Express server with a SQLite database, serves a login screen plus editor UI, and can call an OpenAI-compatible OCR endpoint to read hardware labels from camera or gallery images.
 
 ## Features
 
@@ -100,10 +100,10 @@ Create `.env` from `.env.example` and fill in real values.
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `PORT` | No | HTTPS port. Defaults to `3000`. |
-| `AI_API_URL` | Yes for OCR | OpenAI-compatible vision/chat completions endpoint. |
-| `AI_API_KEY` | Yes for OCR | Primary API key. |
+| `AI_API_URL` | Yes for OCR | OpenAI-compatible multimodal chat completions endpoint. |
+| `AI_API_KEY` | Yes for OCR | Primary Gemini/compatible API key (used after fallback keys). |
 | `AI_API_KEYS` | No | Comma-separated fallback keys. The app rotates keys on `429` responses. |
-| `AI_MODEL` | Yes for OCR | Model name sent to the provider. |
+| `AI_MODEL` | Yes for Gemini OCR | Model name sent to the provider. |
 
 If no OCR keys are configured, the app still starts, but OCR requests will fail until the variables are set.
 
@@ -201,4 +201,4 @@ sudo bash ./setup.sh --enable-web
 
 - The repo includes the bundled inventory seed files but does not include the live SQLite database.
 - The repo does not include generated TLS certs.
-- OCR expects an OpenAI-compatible API shape, even if the provider is not OpenAI itself.
+- OCR uses an OpenAI-compatible multimodal endpoint (Gemini supported).
