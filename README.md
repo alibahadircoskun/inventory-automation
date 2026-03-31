@@ -48,26 +48,61 @@ The server listens on `PORT` for HTTPS and `PORT + 1` for HTTP.
 
 If you want the app to keep running after you close the shell, use the bundled `systemd` service workflow.
 
-Install/update the service:
+`setup.sh` is the main installer. It:
+
+- Installs runtime packages (`nodejs`, `npm`, `openssl`, etc.).
+- Runs `npm install`.
+- Installs/updates the `inventory-mail-generator` systemd service (unless skipped).
+
+Install/update with defaults:
 
 ```bash
 cd /root/inventory-mail-generator
 sudo bash ./setup.sh
 ```
 
-Install it and enable it at boot:
+Common setup flags:
 
 ```bash
-cd /root/inventory-mail-generator
+# Enable service at boot
 sudo bash ./setup.sh --enable-web
+
+# Replace /etc/default/inventory-mail-generator from repo defaults
+sudo bash ./setup.sh --reset-web-env
+
+# Install dependencies only (skip systemd service step)
+sudo bash ./setup.sh --skip-web-service
 ```
 
-If dependencies are already installed and you only want to refresh the service files:
+If dependencies are already installed and you only want to refresh service files:
 
 ```bash
 cd /root/inventory-mail-generator
 sudo bash ./install_web_service.sh
 ```
+
+`install_web_service.sh` flags:
+
+```bash
+# Enable service at boot
+sudo bash ./install_web_service.sh --enable
+
+# Disable service at boot
+sudo bash ./install_web_service.sh --disable
+
+# Replace /etc/default/inventory-mail-generator from repo defaults
+sudo bash ./install_web_service.sh --reset-env
+
+# Update files without restarting the service
+sudo bash ./install_web_service.sh --no-restart
+```
+
+Service installer behavior:
+
+- Installs unit file to `/etc/systemd/system/inventory-mail-generator.service`.
+- Installs env file to `/etc/default/inventory-mail-generator` if missing (or when `--reset-env` is used).
+- Rewrites `WorkingDirectory` and `ExecStart` in the installed unit to match the current repo path.
+- Runs a runner preflight (`run_web_service.sh --help`) before touching systemd files.
 
 Useful service commands:
 
@@ -79,18 +114,22 @@ sudo systemctl status inventory-mail-generator
 sudo journalctl -u inventory-mail-generator -f
 ```
 
-Manual foreground runner:
+Run without systemd (foreground):
 
 ```bash
 cd /root/inventory-mail-generator
 sudo bash ./run_web_service.sh
 ```
 
-Change the port for the foreground runner:
+Runner overrides:
 
 ```bash
+# Change HTTPS port (HTTP always uses PORT + 1)
 sudo PORT=3100 bash ./run_web_service.sh
 sudo bash ./run_web_service.sh --port 3100
+
+# Use a custom Node binary
+sudo NODE_BIN=/usr/bin/node bash ./run_web_service.sh
 ```
 
 ## Environment Variables
@@ -103,9 +142,12 @@ Create `.env` from `.env.example` and fill in real values.
 | `AI_API_URL` | Yes for OCR | OpenAI-compatible multimodal chat completions endpoint. |
 | `AI_API_KEY` | Yes for OCR | Primary Gemini/compatible API key (used after fallback keys). |
 | `AI_API_KEYS` | No | Comma-separated fallback keys. The app rotates keys on `429` responses. |
-| `AI_MODEL` | Yes for Gemini OCR | Model name sent to the provider. |
+| `AI_MODEL` | No | Model name sent to the provider. Defaults to `gemini-2.5-flash`. |
 
 If no OCR keys are configured, the app still starts, but OCR requests will fail until the variables are set.
+
+For service mode, `PORT` can also be set in `/etc/default/inventory-mail-generator`.
+Values already exported by systemd environment files are not overridden by `.env`.
 
 ## Data and Storage
 
@@ -195,6 +237,9 @@ sudo bash ./setup.sh
 
 # Enable service on boot
 sudo bash ./setup.sh --enable-web
+
+# Refresh only systemd service files
+sudo bash ./install_web_service.sh
 ```
 
 ## Notes

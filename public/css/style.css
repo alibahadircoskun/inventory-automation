@@ -441,10 +441,17 @@ select {
   transition: border-color var(--transition);
 }
 .comp-row:hover { border-color: var(--border-hover); }
+.comp-row--drag-over {
+  border-color: var(--accent2);
+  box-shadow: 0 0 0 1px rgba(76, 215, 246, 0.35);
+}
+.comp-row--dragging {
+  opacity: 0.55;
+}
 
 .comp-row-top {
   display: grid;
-  grid-template-columns: 1fr 50px 26px;
+  grid-template-columns: 24px 1fr 50px 26px;
   gap: 6px;
   align-items: center;
   margin-bottom: 6px;
@@ -478,9 +485,42 @@ select {
   margin-top: 10px;
 }
 
+.comp-list {
+  min-height: 14px;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition), box-shadow var(--transition);
+}
+.comp-list--drag-over {
+  background: rgba(76, 215, 246, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(76, 215, 246, 0.3);
+}
+
+.comp-drag-handle {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  justify-content: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-hover);
+  border-radius: var(--radius-xs);
+  cursor: grab;
+}
+.comp-drag-handle:hover {
+  color: var(--text);
+  border-color: var(--border-active);
+}
+.comp-drag-handle:active {
+  cursor: grabbing;
+  transform: none;
+}
+.comp-drag-handle .material-symbols-outlined {
+  pointer-events: none;
+}
+
 .comp-header {
   display: grid;
-  grid-template-columns: 1fr 50px 26px;
+  grid-template-columns: 24px 1fr 50px 26px;
   gap: 6px;
   margin-bottom: 6px;
 }
@@ -492,6 +532,10 @@ select {
   text-transform: uppercase;
   color: var(--text-dim);
   padding: 0 8px;
+}
+.comp-header span:first-child,
+.comp-header span:last-child {
+  padding: 0;
 }
 
 /* ============================================
@@ -1954,7 +1998,7 @@ body::after {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
   }
   .comp-row-top {
-    grid-template-columns: 1fr 56px 32px;
+    grid-template-columns: 28px 1fr 56px 32px;
     gap: 8px;
     margin-bottom: 8px;
   }
@@ -1975,7 +2019,12 @@ body::after {
     min-height: 42px;
   }
   .comp-header {
-    grid-template-columns: 1fr 56px 32px;
+    grid-template-columns: 28px 1fr 56px 32px;
+  }
+  .comp-drag-handle {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
   }
 
   /* Input fields: Inset style */

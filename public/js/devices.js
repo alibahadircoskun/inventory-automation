@@ -121,21 +121,30 @@ const Devices = {
           ${deviceFields}
           ${d.componentsOnly ? `
           <div class="device-section-title">Donanım</div>
-          <div class="comp-header"><span>Tip</span><span>Adet</span><span></span></div>
-          <div id="compList_${di}">${Components.renderCompRows(d.components, di, 'comp')}</div>
+          <div class="comp-header"><span></span><span>Tip</span><span>Adet</span><span></span></div>
+          <div id="compList_${di}" class="comp-list"
+            ondragover="Components.onDragOverList(event,${di},'comp')"
+            ondragleave="Components.onDragLeaveList(event)"
+            ondrop="Components.onDropList(event,${di},'comp')">${Components.renderCompRows(d.components, di, 'comp')}</div>
           <div class="comp-add-row" style="margin-top:6px">
             <button class="btn btn-ghost btn-sm" onclick="Components.addComponent(${di})">+ Donanım Ekle</button>
           </div>
           ` : `
           <div class="device-section-title">Takılan Donanım</div>
-          <div class="comp-header"><span>Tip</span><span>Adet</span><span></span></div>
-          <div id="takilanList_${di}">${Components.renderCompRows(d.takilanComponents, di, 'takilan')}</div>
+          <div class="comp-header"><span></span><span>Tip</span><span>Adet</span><span></span></div>
+          <div id="takilanList_${di}" class="comp-list"
+            ondragover="Components.onDragOverList(event,${di},'takilan')"
+            ondragleave="Components.onDragLeaveList(event)"
+            ondrop="Components.onDropList(event,${di},'takilan')">${Components.renderCompRows(d.takilanComponents, di, 'takilan')}</div>
           <div class="comp-add-row" style="margin-top:6px">
             <button class="btn btn-ghost btn-sm" onclick="Components.addTakilan(${di})">+ Takılan Ekle</button>
           </div>
           <div class="device-section-title">Çıkarılan Donanım</div>
-          <div class="comp-header"><span>Tip</span><span>Adet</span><span></span></div>
-          <div id="compList_${di}">${Components.renderCompRows(d.components, di, 'comp')}</div>
+          <div class="comp-header"><span></span><span>Tip</span><span>Adet</span><span></span></div>
+          <div id="compList_${di}" class="comp-list"
+            ondragover="Components.onDragOverList(event,${di},'comp')"
+            ondragleave="Components.onDragLeaveList(event)"
+            ondrop="Components.onDropList(event,${di},'comp')">${Components.renderCompRows(d.components, di, 'comp')}</div>
           <div class="comp-add-row" style="margin-top:6px">
             <button class="btn btn-ghost btn-sm" onclick="Components.addComponent(${di})">+ Çıkarılan Ekle</button>
           </div>

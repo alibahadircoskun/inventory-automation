@@ -92,37 +92,56 @@ const Email = {
 
     const buildCompRows = (list) => {
       if (!Array.isArray(list) || list.length === 0) return '';
-      let rows = '';
 
-      list.forEach((c) => {
-        const type = c?.type || '\u2014';
-        const units = Array.isArray(c?.units) ? c.units : [];
-        const qty = c?.qty || (units.length > 0 ? units.length : 1);
-        const isMulti = MULTI_TYPES.has(type);
-        const includeHealth = HEALTH_TYPES.has(String(type).toUpperCase());
+      const typeLabelOf = (component) => {
+        const value = String(component?.type || '').trim();
+        return value || '\u2014';
+      };
+      const typeKeyOf = (component) => typeLabelOf(component).toUpperCase();
+      const buildComponentLines = (component) => {
+        const type = typeLabelOf(component);
+        const typeUpper = type.toUpperCase();
+        const units = Array.isArray(component?.units) ? component.units : [];
+        const qty = component?.qty || (units.length > 0 ? units.length : 1);
+        const isMulti = MULTI_TYPES.has(typeUpper);
+        const includeHealth = HEALTH_TYPES.has(typeUpper);
+        const lines = [];
 
         if (isMulti && units.length > 0) {
           units.forEach((u, idx) => {
             const contentCells = buildUnitCells(u, includeHealth);
-
             if (idx === 0) {
-              rows += `<tr>
-                <td rowspan="${units.length}" style="${tdLabel}">${type}</td>
-                <td rowspan="${units.length}" style="${tdCenter}font-weight:600;">${qty}x</td>
-                ${contentCells}
-              </tr>`;
+              lines.push(`<td rowspan="${units.length}" style="${tdCenter}font-weight:600;">${qty}x</td>${contentCells}`);
             } else {
-              rows += `<tr>${contentCells}</tr>`;
+              lines.push(contentCells);
             }
           });
-          return;
+          return lines;
         }
 
-        rows += `<tr>
-          <td style="${tdLabel}">${type}</td>
-          <td style="${tdCenter}font-weight:600;">${qty}x</td>
-          ${buildSingleCompCells(c)}
-        </tr>`;
+        lines.push(`<td style="${tdCenter}font-weight:600;">${qty}x</td>${buildSingleCompCells(component)}`);
+        return lines;
+      };
+
+      let rows = '';
+      const groups = new Map();
+
+      list.forEach((component) => {
+        const groupTypeLabel = typeLabelOf(component);
+        const groupTypeKey = typeKeyOf(component);
+        if (!groups.has(groupTypeKey)) {
+          groups.set(groupTypeKey, { label: groupTypeLabel, lines: [] });
+        }
+        groups.get(groupTypeKey).lines.push(...buildComponentLines(component));
+      });
+
+      groups.forEach((group) => {
+        group.lines.forEach((line, lineIndex) => {
+          const typeCell = lineIndex === 0
+            ? `<td rowspan="${group.lines.length}" style="${tdLabel}">${group.label}</td>`
+            : '';
+          rows += `<tr>${typeCell}${line}</tr>`;
+        });
       });
 
       return rows;

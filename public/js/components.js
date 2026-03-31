@@ -105,6 +105,160 @@ const Components = {
     App.render(); App.scheduleAutoSave();
   },
 
+  dragState: null,
+
+  listKey(listType) {
+    return listType === 'takilan' ? 'takilanComponents' : 'components';
+  },
+
+  getList(di, listType) {
+    const device = App.devices[di];
+    if (!device) return null;
+    const list = device[Components.listKey(listType)];
+    return Array.isArray(list) ? list : null;
+  },
+
+  clearDragOverState() {
+    document.querySelectorAll('.comp-row--drag-over').forEach((el) => el.classList.remove('comp-row--drag-over'));
+    document.querySelectorAll('.comp-list--drag-over').forEach((el) => el.classList.remove('comp-list--drag-over'));
+  },
+
+  clearDragState() {
+    Components.dragState = null;
+    document.querySelectorAll('.comp-row--dragging').forEach((el) => el.classList.remove('comp-row--dragging'));
+    Components.clearDragOverState();
+  },
+
+  canAcceptDrop(di, listType) {
+    const state = Components.dragState;
+    if (!state) return false;
+    if (state.di !== di) return false;
+    return !!Components.getList(state.di, state.listType) && !!Components.getList(di, listType);
+  },
+
+  onDragStart(event, di, listType, ci) {
+    const list = Components.getList(di, listType);
+    if (!list || ci < 0 || ci >= list.length) return;
+
+    Components.clearDragState();
+    Components.dragState = { di, listType, ci };
+
+    if (typeof Search !== 'undefined' && typeof Search.closeAllDropdowns === 'function') {
+      Search.closeAllDropdowns();
+    }
+
+    const row = event.target.closest('.comp-row');
+    if (row) {
+      row.classList.add('comp-row--dragging');
+    }
+
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', `${di}:${listType}:${ci}`);
+      if (row) {
+        try {
+          event.dataTransfer.setDragImage(row, 24, 12);
+        } catch (_) {}
+      }
+    }
+  },
+
+  onDragEnd() {
+    Components.clearDragState();
+  },
+
+  onDragOverRow(event, di, listType, ci) {
+    if (!Components.canAcceptDrop(di, listType)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+    Components.clearDragOverState();
+    event.currentTarget.classList.add('comp-row--drag-over');
+  },
+
+  onDragLeaveRow(event) {
+    if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget)) return;
+    event.currentTarget.classList.remove('comp-row--drag-over');
+  },
+
+  onDropRow(event, di, listType, ci) {
+    if (!Components.canAcceptDrop(di, listType)) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    let insertIndex = ci;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (event.clientY > rect.top + rect.height / 2) insertIndex = ci + 1;
+
+    Components.finishDrop(di, listType, insertIndex);
+  },
+
+  onDragOverList(event, di, listType) {
+    if (!Components.canAcceptDrop(di, listType)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    Components.clearDragOverState();
+    event.currentTarget.classList.add('comp-list--drag-over');
+  },
+
+  onDragLeaveList(event) {
+    if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget)) return;
+    event.currentTarget.classList.remove('comp-list--drag-over');
+  },
+
+  onDropList(event, di, listType) {
+    if (!Components.canAcceptDrop(di, listType)) return;
+    event.preventDefault();
+    Components.finishDrop(di, listType, null);
+  },
+
+  moveComponent(fromDi, fromListType, fromIndex, toDi, toListType, toIndex) {
+    if (fromDi !== toDi) return false;
+
+    const fromList = Components.getList(fromDi, fromListType);
+    const toList = Components.getList(toDi, toListType);
+    if (!fromList || !toList) return false;
+    if (fromIndex < 0 || fromIndex >= fromList.length) return false;
+
+    const append = toIndex === null || toIndex === undefined;
+    let insertIndex = append ? toList.length : Math.max(0, Math.min(toIndex, toList.length));
+
+    if (fromList === toList && (insertIndex === fromIndex || insertIndex === fromIndex + 1)) {
+      return false;
+    }
+
+    const [moved] = fromList.splice(fromIndex, 1);
+    if (!moved) return false;
+
+    if (fromList === toList && fromIndex < insertIndex) {
+      insertIndex -= 1;
+    }
+
+    toList.splice(insertIndex, 0, moved);
+    return true;
+  },
+
+  finishDrop(toDi, toListType, toIndex) {
+    const state = Components.dragState;
+    if (!state) return;
+
+    const moved = Components.moveComponent(state.di, state.listType, state.ci, toDi, toListType, toIndex);
+    Components.clearDragState();
+    if (!moved) return;
+
+    if (typeof Search !== 'undefined' && typeof Search.closeAllDropdowns === 'function') {
+      Search.closeAllDropdowns();
+    }
+
+    const affectedLists = new Set([state.listType, toListType]);
+    affectedLists.forEach((listType) => {
+      if (listType === 'takilan') Components.renderTakilanListFor(toDi);
+      else Components.renderCompListFor(toDi);
+    });
+    App.render();
+    App.scheduleAutoSave();
+  },
+
   renderUnitRows(c, di, ci, listType) {
     const fn  = listType === 'comp' ? 'Components.updateCompUnit' : 'Components.updateTakilanUnit';
     const pfx = listType === 'comp' ? 'compdd' : 'takilandd';
@@ -154,12 +308,22 @@ const Components = {
               <div class="search-dropdown" id="${ddPfx}_${di}_${ci}"></div>
             </div>
           </div>`;
-      return `<div class="comp-row" id="${listType}row_${di}_${ci}">
+      return `<div class="comp-row" id="${listType}row_${di}_${ci}"
+        ondragover="Components.onDragOverRow(event,${di},'${listType}',${ci})"
+        ondragleave="Components.onDragLeaveRow(event)"
+        ondrop="Components.onDropRow(event,${di},'${listType}',${ci})">
         <div class="comp-row-top">
+          <button class="btn btn-ghost comp-drag-handle" type="button" draggable="true"
+            onmousedown="event.stopPropagation()"
+            ondragstart="Components.onDragStart(event,${di},'${listType}',${ci})"
+            ondragend="Components.onDragEnd()"
+            title="Sürükle">
+            <span class="material-symbols-outlined" style="font-size:16px">drag_indicator</span>
+          </button>
           <select onchange="${updateFn}(${di},${ci},'type',this.value)" style="width:100%">${opts}</select>
           <input type="number" min="1" max="32" value="${c.qty}"
             onchange="${updateFn}(${di},${ci},'qty',parseInt(this.value)||1)" style="text-align:center">
-          <button class="btn btn-danger" onclick="${removeFn}(${di},${ci})" style="padding:2px 4px"><span class="material-symbols-outlined" style="font-size:15px">close</span></button>
+          <button class="btn btn-danger" type="button" onclick="${removeFn}(${di},${ci})" style="padding:2px 4px"><span class="material-symbols-outlined" style="font-size:15px">close</span></button>
         </div>${bottomHtml}</div>`;
     }).join('');
   },
