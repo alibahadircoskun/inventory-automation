@@ -21,6 +21,18 @@ if (fs.existsSync(envPath)) {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use((req, res, next) => {
+  if (req.path === '/' || req.path === '/app' || req.path.startsWith('/api/')) {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    if (req.path.startsWith('/api/')) {
+      res.vary('Cookie');
+    }
+  }
+  next();
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -28,7 +40,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Routes
 app.use('/api', require('./routes/auth'));
 app.use('/api/sessions', require('./routes/sessions'));
+app.use('/api/approval', require('./routes/approval'));
 app.use('/api/inventory', require('./routes/inventory'));
+app.use('/api/snipeit', require('./routes/snipeit'));
+app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/ocr', require('./routes/ocr'));
 app.use('/api/usage', require('./routes/usage'));
 
@@ -38,6 +53,16 @@ app.get('/', (req, res) => {
 });
 app.get('/app', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'app.html'));
+});
+
+app.use((err, req, res, next) => {
+  console.error(err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(err.statusCode || 500).json({
+    error: err.message || 'Internal server error'
+  });
 });
 
 // Init DB

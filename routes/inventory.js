@@ -1,7 +1,9 @@
 const express = require('express');
 const { getDb } = require('../db');
+const { requireFreshPin } = require('../middleware/auth');
 
 const router = express.Router();
+router.use(requireFreshPin);
 
 router.get('/assets', (req, res) => {
   const q = (req.query.q || '').trim().toLowerCase();

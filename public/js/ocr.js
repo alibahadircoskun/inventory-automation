@@ -1,6 +1,6 @@
 const OCR = {
   cameraStream: null,
-  currentFacingMode: 'environment',
+  currentFaçıngMode: 'environment',
   mode: 'batch',
   target: null,
   batchDestination: 'comp',
@@ -148,7 +148,7 @@ const OCR = {
   mapFocusPointForTrack(point) {
     const normalized = OCR.normalizeFocusPoint(point);
     if (!normalized) return null;
-    if (OCR.currentFacingMode === 'user') {
+    if (OCR.currentFaçıngMode === 'user') {
       return {
         x: OCR.clampUnit(1 - normalized.x),
         y: normalized.y
@@ -922,7 +922,7 @@ const OCR = {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
-          facingMode: { ideal: OCR.currentFacingMode },
+          façıngMode: { ideal: OCR.currentFaçıngMode },
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         }
@@ -935,7 +935,7 @@ const OCR = {
 
       OCR.cameraStream = stream;
       OCR.inspectFocusCapabilities(OCR.getCameraTrack(stream));
-      video.dataset.facingMode = OCR.currentFacingMode;
+      video.dataset.façıngMode = OCR.currentFaçıngMode;
       video.srcObject = stream;
 
       let markedReady = false;
@@ -981,7 +981,7 @@ const OCR = {
 
   async switchCamera() {
 
-    OCR.currentFacingMode = OCR.currentFacingMode === 'environment' ? 'user' : 'environment';
+    OCR.currentFaçıngMode = OCR.currentFaçıngMode === 'environment' ? 'user' : 'environment';
     if (OCR.source === 'camera') {
       OCR.capturePreview = '';
       await OCR.startCamera();
@@ -2618,9 +2618,9 @@ const OCR = {
       galleryHelp.style.display = 'none';
     }
 
-    if (video) video.dataset.facingMode = OCR.currentFacingMode;
+    if (video) video.dataset.façıngMode = OCR.currentFaçıngMode;
     if (still) {
-      still.dataset.facingMode = OCR.currentFacingMode;
+      still.dataset.façıngMode = OCR.currentFaçıngMode;
       if (OCR.capturePreview) {
         still.src = OCR.capturePreview;
       } else {

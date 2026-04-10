@@ -4,10 +4,11 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "bootstrap-auth": "node scripts/bootstrap-auth.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.0.0",
+    "better-sqlite3": "^11.10.0",
     "cookie-parser": "^1.4.6",
     "express": "^4.21.0",
     "uuid": "^9.0.0"

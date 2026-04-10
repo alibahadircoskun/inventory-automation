@@ -1,7 +1,8 @@
 const express = require('express');
 const { getDb } = require('../db');
-const { activeSessions } = require('../middleware/auth');
+const { requireFreshPin } = require('../middleware/auth');
 const router = express.Router();
+router.use(requireFreshPin);
 
 let apiKeyCursor = 0;
 const keyUsageLog = new Map(); // apiKey → [timestamp, ...]
@@ -453,9 +454,7 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    const sessionToken = req.cookies?.session;
-    const sessionUser = sessionToken && activeSessions.get(sessionToken);
-    const username = sessionUser?.username || '';
+    const username = req.user?.username || '';
     const aiResult = await callAiOcrWithRotation(image, null, username, 'gemini');
     const parsed = aiResult.parsed;
     const content = aiResult.content;

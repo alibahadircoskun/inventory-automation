@@ -3,3 +3,4 @@ db/
 certs/
 .env
 backups/
+component_batch_import.local.json

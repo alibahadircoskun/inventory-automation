@@ -8,16 +8,15 @@ const Sync = {
   startPolling(sessionId) {
     Sync.stopPolling();
     Sync.pollTimer = setInterval(async () => {
-      if (Sync.savePending) return;
+      if (Sync.savePending || !App.currentSessionId) return;
       try {
         const res = await API.get(`/api/sessions/${sessionId}/check`);
-        if (res && res.updated_at !== Sync.lastUpdatedAt) {
+        if (res && (res.updated_at !== Sync.lastUpdatedAt || res.status !== App.currentSession?.status)) {
           Sync.lastUpdatedAt = res.updated_at;
-          // Reload full session data
           const session = await API.get(`/api/sessions/${sessionId}`);
           if (session) App.loadSessionData(session, true);
         }
-      } catch(e) { /* ignore poll errors */ }
+      } catch (_) {}
     }, Sync.POLL_INTERVAL);
   },
 
@@ -27,10 +26,11 @@ const Sync = {
   },
 
   scheduleAutoSave() {
+    if (!App.canEditCurrentSession()) return;
     clearTimeout(Sync.saveTimeout);
     Sync.updateIndicator('saving');
     Sync.saveTimeout = setTimeout(async () => {
-      if (!App.currentSessionId) return;
+      if (!App.currentSessionId || !App.canEditCurrentSession()) return;
       Sync.savePending = true;
       try {
         const data = App.getFormData();
@@ -39,7 +39,7 @@ const Sync = {
           Sync.lastUpdatedAt = res.updated_at;
           Sync.updateIndicator('saved');
         }
-      } catch(e) {
+      } catch (_) {
         Sync.updateIndicator('error');
       } finally {
         Sync.savePending = false;
@@ -50,9 +50,9 @@ const Sync = {
   updateIndicator(state) {
     const el = document.getElementById('saveIndicator');
     if (!el) return;
-    el.className = 'save-indicator ' + state;
+    el.className = `save-indicator ${state}`;
     if (state === 'saving') el.textContent = 'Kaydediliyor...';
     else if (state === 'saved') el.textContent = 'Kaydedildi';
-    else if (state === 'error') el.textContent = 'Kayıt hatası';
+    else if (state === 'error') el.textContent = 'Kayıt hatasi';
   }
 };

@@ -1,42 +1,51 @@
 const API = {
-  async get(url) {
-    const res = await fetch(url);
-    if (!res.ok) {
-      if (res.status === 401) { window.location.href = '/'; return null; }
-      throw new Error(`GET ${url}: ${res.status}`);
+  async request(method, url, body) {
+    const options = {
+      method,
+      headers: {},
+      cache: 'no-store',
+      credentials: 'same-origin'
+    };
+
+    if (body !== undefined) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body);
     }
-    return res.json();
+
+    const res = await fetch(url, options);
+    const contentType = res.headers.get('content-type') || '';
+    const payload = contentType.includes('application/json')
+      ? await res.json().catch(() => null)
+      : await res.text().catch(() => null);
+
+    if (!res.ok) {
+      if (res.status === 401 && typeof App !== 'undefined') {
+        window.location.href = '/';
+        return null;
+      }
+
+      const error = new Error(payload?.error || `${method} ${url}: ${res.status}`);
+      error.status = res.status;
+      error.data = payload;
+      throw error;
+    }
+
+    return payload;
   },
-  async post(url, body) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    if (!res.ok) {
-      if (res.status === 401) { window.location.href = '/'; return null; }
-      throw new Error(`POST ${url}: ${res.status}`);
-    }
-    return res.json();
+
+  get(url) {
+    return API.request('GET', url);
   },
-  async put(url, body) {
-    const res = await fetch(url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    if (!res.ok) {
-      if (res.status === 401) { window.location.href = '/'; return null; }
-      throw new Error(`PUT ${url}: ${res.status}`);
-    }
-    return res.json();
+
+  post(url, body) {
+    return API.request('POST', url, body);
   },
-  async del(url) {
-    const res = await fetch(url, { method: 'DELETE' });
-    if (!res.ok) {
-      if (res.status === 401) { window.location.href = '/'; return null; }
-      throw new Error(`DELETE ${url}: ${res.status}`);
-    }
-    return res.json();
+
+  put(url, body) {
+    return API.request('PUT', url, body);
+  },
+
+  del(url) {
+    return API.request('DELETE', url);
   }
 };

@@ -1,6 +1,9 @@
 const express = require('express');
 const { getDb } = require('../db');
+const { requireFreshPin, requireRole } = require('../middleware/auth');
 const router = express.Router();
+router.use(requireFreshPin);
+router.use(requireRole('manager'));
 
 // GET /api/usage — recent logs with pagination
 router.get('/', (req, res) => {

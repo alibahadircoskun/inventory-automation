@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Inventory Mail Generator - Giriş</title>
+<title>Envanter Operasyon Merkezi - Giriş</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -107,7 +107,7 @@
     font-size: 20px;
     font-weight: 900;
     color: #002e6a;
-    letter-spacing: -0.5px;
+    letter-spaçıng: -0.5px;
     margin-bottom: 20px;
     box-shadow: 0 8px 32px rgba(76, 215, 246, 0.25);
   }
@@ -115,7 +115,7 @@
     font-family: var(--font);
     font-size: 28px;
     font-weight: 800;
-    letter-spacing: -0.5px;
+    letter-spaçıng: -0.5px;
     color: var(--text);
     margin-bottom: 8px;
     text-align: center;
@@ -124,7 +124,7 @@
     font-size: 11px;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 3px;
+    letter-spaçıng: 3px;
     font-weight: 600;
   }
   .user-grid {
@@ -179,6 +179,92 @@
     font-weight: 600;
     color: var(--text);
   }
+  .pin-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(6, 14, 32, 0.72);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    padding: 24px;
+  }
+  .pin-overlay.open { display: flex; }
+  .pin-card {
+    width: 100%;
+    max-width: 420px;
+    background: rgba(23, 31, 51, 0.94);
+    border: 1px solid rgba(218, 226, 253, 0.08);
+    border-radius: 20px;
+    padding: 28px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+  }
+  .pin-kicker {
+    font-size: 10px;
+    letter-spaçıng: 2px;
+    text-transform: uppercase;
+    color: var(--accent2);
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .pin-title {
+    font-size: 24px;
+    font-weight: 800;
+    margin-bottom: 6px;
+  }
+  .pin-subtitle {
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 18px;
+  }
+  .pin-input {
+    width: 100%;
+    background: #060e20;
+    border: 1px solid rgba(218, 226, 253, 0.1);
+    border-radius: 14px;
+    color: var(--text);
+    padding: 14px 16px;
+    font-size: 20px;
+    letter-spaçıng: 6px;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .pin-input:focus {
+    outline: none;
+    border-color: rgba(173, 198, 255, 0.4);
+    box-shadow: 0 0 0 3px rgba(173, 198, 255, 0.08);
+  }
+  .pin-error {
+    min-height: 18px;
+    color: #ffb4ab;
+    font-size: 12px;
+    margin-bottom: 14px;
+  }
+  .pin-actions {
+    display: flex;
+    gap: 10px;
+  }
+  .pin-btn {
+    flex: 1;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: var(--font);
+  }
+  .pin-btn.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #002e6a;
+  }
+  .pin-btn.secondary {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid rgba(218, 226, 253, 0.12);
+  }
   footer {
     position: relative;
     z-index: 1;
@@ -189,7 +275,7 @@
   footer span {
     font-size: 11px;
     color: var(--text-dim);
-    letter-spacing: 1px;
+    letter-spaçıng: 1px;
     text-transform: uppercase;
     font-weight: 500;
   }
@@ -226,7 +312,7 @@
     }
     .login-title {
       font-size: 22px;
-      letter-spacing: -0.3px;
+      letter-spaçıng: -0.3px;
       background: linear-gradient(135deg, #dae2fd 0%, #adc6ff 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
@@ -234,7 +320,7 @@
     }
     .login-subtitle {
       font-size: 10px;
-      letter-spacing: 3.5px;
+      letter-spaçıng: 3.5px;
       color: var(--accent2);
       margin-top: 6px;
     }
@@ -268,7 +354,7 @@
     }
     .user-name {
       font-size: 13px;
-      letter-spacing: 0.2px;
+      letter-spaçıng: 0.2px;
     }
     footer {
       padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px));
@@ -276,7 +362,7 @@
     }
     footer span {
       font-size: 10px;
-      letter-spacing: 1.5px;
+      letter-spaçıng: 1.5px;
       color: rgba(66, 71, 84, 0.6);
     }
   }
@@ -290,30 +376,103 @@
 <main>
   <div class="login-card">
     <div class="login-logo-wrap">
-      <div class="login-logo">IMG</div>
-      <h1 class="login-title">Inventory Mail Generator</h1>
-      <p class="login-subtitle">Kullanıcı Seçin</p>
+      <div class="login-logo">EOM</div>
+      <h1 class="login-title">Envanter Operasyon Merkezi</h1>
+      <p class="login-subtitle">PIN ile Giriş</p>
     </div>
     <div class="user-grid" id="userGrid"></div>
   </div>
 </main>
 
+<div class="pin-overlay" id="pinOverlay">
+  <div class="pin-card">
+    <div class="pin-kicker">Güvenli Giriş</div>
+    <div class="pin-title" id="pinTitle">Kullanıcı Seçin</div>
+    <div class="pin-subtitle">Devam etmek için 6 haneli PIN girin.</div>
+    <input class="pin-input" id="pinInput" type="password" inputmode="numeric" maxlength="6" placeholder="123456">
+    <div class="pin-error" id="pinError"></div>
+    <div class="pin-actions">
+      <button class="pin-btn secondary" type="button" onclick="closePinOverlay()">Geri</button>
+      <button class="pin-btn primary" type="button" onclick="submitPinLogin()">Giriş Yap</button>
+    </div>
+  </div>
+</div>
+
 <footer>
-  <span>Inventory Mail Generator</span>
+  <span>Envanter Operasyon Merkezi</span>
 </footer>
 
 <script>
+(function() {
+  let selectedUser = null;
+
+  window.openPinOverlay = function(username, displayName) {
+    selectedUser = username;
+    document.getElementById('pinTitle').textContent = displayName;
+    document.getElementById('pinInput').value = '';
+    document.getElementById('pinError').textContent = '';
+    document.getElementById('pinOverlay').classList.add('open');
+    document.getElementById('pinInput').focus();
+  };
+
+  window.closePinOverlay = function() {
+    selectedUser = null;
+    document.getElementById('pinOverlay').classList.remove('open');
+  };
+
+  window.submitPinLogin = async function() {
+    const pin = document.getElementById('pinInput').value.trim();
+    const errorEl = document.getElementById('pinError');
+    if (!selectedUser) return;
+    if (!/^\d{6}$/.test(pin)) {
+      errorEl.textContent = 'PIN tam olarak 6 hane olmali.';
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        credentials: 'same-origin',
+        body: JSON.stringify({ username: selectedUser, pin })
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        errorEl.textContent = data?.error || 'Giriş başarısız';
+        return;
+      }
+      window.location.href = '/app';
+    } catch (error) {
+      errorEl.textContent = 'Giriş başarısız';
+    }
+  };
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closePinOverlay();
+    if (event.key === 'Enter' && document.getElementById('pinOverlay').classList.contains('open')) {
+      submitPinLogin();
+    }
+  });
+})();
+
 (async function() {
   try {
-    const me = await fetch('/api/me').then(r => r.ok ? r.json() : null);
+    const me = await fetch('/api/me', {
+      cache: 'no-store',
+      credentials: 'same-origin'
+    }).then(r => r.ok ? r.json() : null);
     if (me) { window.location.href = '/app'; return; }
   } catch(e) {}
 
-  const users = await fetch('/api/users').then(r => r.json());
+  const users = await fetch('/api/users', {
+    cache: 'no-store',
+    credentials: 'same-origin'
+  }).then(r => r.json());
   const grid = document.getElementById('userGrid');
   grid.innerHTML = users.map(u => {
     const initials = u.display_name.slice(0, 2).toUpperCase();
-    return `<div class="user-card" onclick="login('${u.username}')">
+    return `<div class="user-card" onclick="openPinOverlay('${u.username}', '${u.display_name.replace(/'/g, "\\'")}')">
       <div class="user-avatar-ring">
         <div class="user-avatar">${initials}</div>
       </div>
@@ -321,15 +480,6 @@
     </div>`;
   }).join('');
 })();
-
-async function login(username) {
-  const res = await fetch('/api/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username })
-  });
-  if (res.ok) window.location.href = '/app';
-}
 </script>
 </body>
 </html>

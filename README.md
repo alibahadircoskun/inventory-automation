@@ -1,4 +1,4 @@
-# Inventory Mail Generator
+# Envanter Operasyon Merkezi
 
 Internal web app for building inventory handoff emails from device lists, component lookups, and OCR-assisted label capture.
 

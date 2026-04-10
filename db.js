@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 
 const DB_PATH = path.join(__dirname, 'db', 'inventory.db');
+const LATEST_USER_VERSION = 8;
 let db;
 
 function getDb() {
@@ -15,9 +16,27 @@ function getDb() {
   return db;
 }
 
-function initDB() {
-  const db = getDb();
+function tableExists(db, tableName) {
+  const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName);
+  return !!row;
+}
 
+function columnExists(db, tableName, columnName) {
+  if (!tableExists(db, tableName)) {
+    return false;
+  }
+
+  const rows = db.prepare(`PRAGMA table_info(${tableName})`).all();
+  return rows.some((row) => row.name === columnName);
+}
+
+function addColumnIfMissing(db, tableName, columnName, columnDef) {
+  if (!columnExists(db, tableName, columnName)) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnDef}`);
+  }
+}
+
+function createLegacyBaseSchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -179,8 +198,231 @@ function initDB() {
       console.log(`Imported ${comps.length} inventory components`);
     }
   }
+}
+
+function runMigration(db, version, migrate) {
+  const tx = db.transaction(() => {
+    migrate(db);
+    db.pragma(`user_version = ${version}`);
+  });
+
+  tx();
+}
+
+function runMigrations(db) {
+  const currentVersion = db.pragma('user_version', { simple: true }) || 0;
+
+  const migrations = [
+    {
+      version: 1,
+      migrate(db) {
+        addColumnIfMissing(db, 'users', 'role', "role TEXT NOT NULL DEFAULT 'tech'");
+        addColumnIfMissing(db, 'users', 'pin_hash', 'pin_hash TEXT DEFAULT NULL');
+        addColumnIfMissing(db, 'users', 'must_change_pin', 'must_change_pin INTEGER NOT NULL DEFAULT 0');
+        addColumnIfMissing(db, 'users', 'failed_pin_attempts', 'failed_pin_attempts INTEGER NOT NULL DEFAULT 0');
+        addColumnIfMissing(db, 'users', 'locked_until', 'locked_until TEXT DEFAULT NULL');
+        addColumnIfMissing(db, 'users', 'pin_changed_at', 'pin_changed_at TEXT DEFAULT NULL');
+
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS auth_sessions (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            expires_at TEXT NOT NULL,
+            last_seen_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions(user_id);
+          CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at ON auth_sessions(expires_at);
+        `);
+      }
+    },
+    {
+      version: 2,
+      migrate(db) {
+        addColumnIfMissing(db, 'work_sessions', 'submitted_at', 'submitted_at TEXT DEFAULT NULL');
+        addColumnIfMissing(db, 'work_sessions', 'submitted_by', 'submitted_by INTEGER DEFAULT NULL');
+        addColumnIfMissing(db, 'work_sessions', 'reviewed_by', 'reviewed_by INTEGER DEFAULT NULL');
+        addColumnIfMissing(db, 'work_sessions', 'reviewed_at', 'reviewed_at TEXT DEFAULT NULL');
+        addColumnIfMissing(db, 'work_sessions', 'review_comment', "review_comment TEXT DEFAULT ''");
+        addColumnIfMissing(db, 'work_sessions', 'snipeit_sync_status', 'snipeit_sync_status TEXT DEFAULT NULL');
+        addColumnIfMissing(db, 'work_sessions', 'snipeit_sync_started_at', 'snipeit_sync_started_at TEXT DEFAULT NULL');
+        addColumnIfMissing(db, 'work_sessions', 'snipeit_sync_finished_at', 'snipeit_sync_finished_at TEXT DEFAULT NULL');
+        addColumnIfMissing(db, 'work_sessions', 'snipeit_sync_summary', 'snipeit_sync_summary TEXT DEFAULT NULL');
+
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS session_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            actor_user_id INTEGER DEFAULT NULL,
+            event_type TEXT NOT NULL,
+            detail TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (session_id) REFERENCES work_sessions(id) ON DELETE CASCADE,
+            FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_work_sessions_user_status ON work_sessions(user_id, status);
+          CREATE INDEX IF NOT EXISTS idx_work_sessions_status ON work_sessions(status, updated_at);
+          CREATE INDEX IF NOT EXISTS idx_session_events_session_id ON session_events(session_id, created_at);
+        `);
+
+        db.prepare("UPDATE work_sessions SET status = 'approved' WHERE status = 'completed'").run();
+      }
+    },
+    {
+      version: 3,
+      migrate(db) {
+        addColumnIfMissing(db, 'session_devices', 'asset_resolution_mode', "asset_resolution_mode TEXT DEFAULT 'unresolved'");
+        addColumnIfMissing(db, 'session_devices', 'snipeit_asset_id', 'snipeit_asset_id INTEGER DEFAULT NULL');
+        addColumnIfMissing(db, 'session_devices', 'snipeit_asset_snapshot', 'snipeit_asset_snapshot TEXT DEFAULT NULL');
+        addColumnIfMissing(db, 'session_devices', 'snipeit_validated_at', 'snipeit_validated_at TEXT DEFAULT NULL');
+        addColumnIfMissing(db, 'session_devices', 'proposed_new_asset_status', "proposed_new_asset_status TEXT DEFAULT ''");
+        addColumnIfMissing(db, 'session_devices', 'proposed_new_asset_location', "proposed_new_asset_location TEXT DEFAULT ''");
+
+        addColumnIfMissing(db, 'session_components', 'snipeit_component_id', 'snipeit_component_id INTEGER DEFAULT NULL');
+        addColumnIfMissing(db, 'session_components', 'snipeit_component_snapshot', 'snipeit_component_snapshot TEXT DEFAULT NULL');
+        addColumnIfMissing(db, 'session_components', 'snipeit_match_status', "snipeit_match_status TEXT DEFAULT 'unresolved'");
+
+        addColumnIfMissing(db, 'session_component_units', 'snipeit_component_id', 'snipeit_component_id INTEGER DEFAULT NULL');
+        addColumnIfMissing(db, 'session_component_units', 'snipeit_component_snapshot', 'snipeit_component_snapshot TEXT DEFAULT NULL');
+        addColumnIfMissing(db, 'session_component_units', 'snipeit_match_status', "snipeit_match_status TEXT DEFAULT 'unresolved'");
+      }
+    },
+    {
+      version: 4,
+      migrate(db) {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS sync_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            operation TEXT NOT NULL,
+            snipeit_endpoint TEXT NOT NULL,
+            request_payload TEXT,
+            response_status INTEGER,
+            response_body TEXT,
+            success INTEGER DEFAULT 0,
+            idempotency_key TEXT DEFAULT NULL,
+            FOREIGN KEY (session_id) REFERENCES work_sessions(id) ON DELETE CASCADE
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_sync_audit_log_session_id ON sync_audit_log(session_id, created_at);
+          CREATE INDEX IF NOT EXISTS idx_sync_audit_log_idempotency_key ON sync_audit_log(idempotency_key);
+        `);
+      }
+    },
+    {
+      version: 5,
+      migrate(db) {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT DEFAULT '',
+            data TEXT DEFAULT NULL,
+            read_at TEXT DEFAULT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id, read_at, created_at);
+        `);
+      }
+    },
+    {
+      version: 6,
+      migrate(db) {
+        addColumnIfMissing(db, 'work_sessions', 'archived_at', 'archived_at TEXT DEFAULT NULL');
+        addColumnIfMissing(db, 'work_sessions', 'archived_by_user_id', 'archived_by_user_id INTEGER DEFAULT NULL');
+        addColumnIfMissing(db, 'work_sessions', 'source_session_id', 'source_session_id TEXT DEFAULT NULL');
+
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_work_sessions_archived_status ON work_sessions(archived_at, status, updated_at);
+          CREATE INDEX IF NOT EXISTS idx_work_sessions_source_session_id ON work_sessions(source_session_id);
+        `);
+      }
+    },
+    {
+      version: 7,
+      migrate(db) {
+        addColumnIfMissing(db, 'session_components', 'proposed_new_component_category', "proposed_new_component_category TEXT DEFAULT ''");
+        addColumnIfMissing(db, 'session_components', 'proposed_new_component_location', "proposed_new_component_location TEXT DEFAULT ''");
+        addColumnIfMissing(db, 'session_component_units', 'proposed_new_component_category', "proposed_new_component_category TEXT DEFAULT ''");
+        addColumnIfMissing(db, 'session_component_units', 'proposed_new_component_location', "proposed_new_component_location TEXT DEFAULT ''");
+      }
+    },
+    {
+      version: 8,
+      migrate(db) {
+        addColumnIfMissing(db, 'session_devices', 'current_state_snapshot', 'current_state_snapshot TEXT DEFAULT NULL');
+        addColumnIfMissing(db, 'session_devices', 'current_state_fetched_at', 'current_state_fetched_at TEXT DEFAULT NULL');
+      }
+    }
+  ];
+
+  for (const migration of migrations) {
+    if (currentVersion < migration.version) {
+      runMigration(db, migration.version, migration.migrate);
+    }
+  }
+}
+
+function seedUsers(db) {
+  const users = [
+    ['bahadir', 'Bahadır', 'tech'],
+    ['anil', 'Anıl', 'tech'],
+    ['eren', 'Eren', 'tech'],
+    ['emre', 'Emre', 'tech'],
+    ['yagiz', 'Yağız', 'tech'],
+    ['volkan', 'Volkan', 'manager']
+  ];
+
+  const insertUser = db.prepare('INSERT OR IGNORE INTO users (username, display_name, role) VALUES (?, ?, ?)');
+  const updateUser = db.prepare('UPDATE users SET display_name = ?, role = ? WHERE username = ?');
+
+  for (const [username, displayName, role] of users) {
+    insertUser.run(username, displayName, role);
+    updateUser.run(displayName, role, username);
+  }
+
+  const legacyDisplayByUsername = {
+    bahadir: 'Bahadir',
+    anil: 'Anil',
+    yagiz: 'Yagiz'
+  };
+  const selectDisplayName = db.prepare('SELECT display_name FROM users WHERE username = ?');
+  const updateDisplayName = db.prepare('UPDATE users SET display_name = ? WHERE username = ?');
+  for (const [username, displayName] of users) {
+    const existing = selectDisplayName.get(username);
+    if (existing && legacyDisplayByUsername[username] && existing.display_name === legacyDisplayByUsername[username]) {
+      updateDisplayName.run(displayName, username);
+    }
+  }
+}
+
+function cleanupExpiredAuthSessions(db) {
+  db.prepare("DELETE FROM auth_sessions WHERE datetime(expires_at) <= datetime('now')").run();
+}
+
+function initDB() {
+  const db = getDb();
+
+  createLegacyBaseSchema(db);
+  runMigrations(db);
+  seedUsers(db);
+  cleanupExpiredAuthSessions(db);
 
   console.log('Database initialized');
 }
 
-module.exports = { getDb, initDB };
+module.exports = {
+  DB_PATH,
+  LATEST_USER_VERSION,
+  cleanupExpiredAuthSessions,
+  getDb,
+  initDB
+};

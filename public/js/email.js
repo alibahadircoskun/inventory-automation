@@ -28,13 +28,13 @@ const Email = {
       'padding:6px 8px;border:1px solid #c8cdd2;background-color:#f0f2f5;color:#1a1a1a;font-size:13px;font-weight:600;line-height:1.35;white-space:nowrap;text-align:center;font-family:Arial,Helvetica,sans-serif;vertical-align:middle;';
     const tdCenter = tdBase + 'text-align:center;white-space:nowrap;';
     const thMain =
-      'padding:9px 10px;background-color:#2d3748;color:#ffffff;text-align:center;font-size:13px;font-weight:700;line-height:1.3;letter-spacing:1.1px;border:1px solid #c8cdd2;font-family:Arial,Helvetica,sans-serif;mso-line-height-rule:exactly;mso-border-alt:1px solid #c8cdd2;';
+      'padding:9px 10px;background-color:#2d3748;color:#ffffff;text-align:center;font-size:13px;font-weight:700;line-height:1.3;letter-spaçıng:1.1px;border:1px solid #c8cdd2;font-family:Arial,Helvetica,sans-serif;mso-line-height-rule:exactly;mso-border-alt:1px solid #c8cdd2;';
     const thSection =
-      'padding:9px 10px;background-color:#2d3748;color:#ffffff;text-align:center;font-size:13px;font-weight:700;line-height:1.3;letter-spacing:1.1px;border:1px solid #c8cdd2;font-family:Arial,Helvetica,sans-serif;mso-line-height-rule:exactly;mso-border-alt:1px solid #c8cdd2;';
+      'padding:9px 10px;background-color:#2d3748;color:#ffffff;text-align:center;font-size:13px;font-weight:700;line-height:1.3;letter-spaçıng:1.1px;border:1px solid #c8cdd2;font-family:Arial,Helvetica,sans-serif;mso-line-height-rule:exactly;mso-border-alt:1px solid #c8cdd2;';
     const thMainText =
-      'display:block;margin:0;text-align:center;color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;line-height:1.3;letter-spacing:1.1px;mso-line-height-rule:exactly;';
+      'display:block;margin:0;text-align:center;color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;line-height:1.3;letter-spaçıng:1.1px;mso-line-height-rule:exactly;';
     const thSectionText =
-      'display:block;margin:0;text-align:center;color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;line-height:1.3;letter-spacing:1.1px;mso-line-height-rule:exactly;';
+      'display:block;margin:0;text-align:center;color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;line-height:1.3;letter-spaçıng:1.1px;mso-line-height-rule:exactly;';
 
     const buildHeaderRow = (label, cellStyle, textStyle) =>
       `<tr><td colspan="${totalCols}" align="center" valign="middle" bgcolor="#2d3748" style="${cellStyle}"><span style="${textStyle}">${label}</span></td></tr>`;
@@ -190,12 +190,12 @@ const Email = {
       ? `<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.45;color:#1a1a1a;margin:0 0 10px 0;white-space:pre-wrap;">${data.description}</p>`
       : '';
 
-    return `<table data-mail-wrapper="1" role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background-color:#ffffff;font-family:Arial,Helvetica,sans-serif;" bgcolor="#ffffff">
+    return `<table data-mail-wrapper="1" role="presentation" cellpadding="0" cellspaçıng="0" border="0" style="border-collapse:collapse;background-color:#ffffff;font-family:Arial,Helvetica,sans-serif;" bgcolor="#ffffff">
   <tbody>
     <tr>
       <td style="padding:0;">
         ${descHtml}
-        <table data-mail-table="1" role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #c8cdd2;table-layout:auto;">
+        <table data-mail-table="1" role="presentation" cellpadding="0" cellspaçıng="0" style="border-collapse:collapse;border:1px solid #c8cdd2;table-layout:auto;">
           ${colgroup}
           <tbody>${deviceBlocks}</tbody>
         </table>

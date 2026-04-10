@@ -1,161 +1,245 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getDb } = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { asyncHandler } = require('../lib/async-handler');
+const { createNotification, notifyManagers } = require('../lib/notifications');
+const { revalidateSessionAgainstSnipe } = require('../lib/snipeit-sync');
+const {
+  canEditSession,
+  cloneDevicesForDraft,
+  insertSessionEvent,
+  listSessionsForUser,
+  loadSessionWithDevices,
+  replaceSessionData
+} = require('../lib/work-sessions');
+const { requireFreshPin } = require('../middleware/auth');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireFreshPin);
 
-// List user's sessions
+function loadOwnedSession(sessionId, userId, { includeArchived = false } = {}) {
+  const session = loadSessionWithDevices(getDb(), sessionId);
+  if (!session || session.user_id !== userId) {
+    return null;
+  }
+  if (!includeArchived && session.archived_at) {
+    return null;
+  }
+  return session;
+}
+
+function ensureDraft(session, res) {
+  if (!canEditSession(session)) {
+    res.status(409).json({ error: 'Oturum mevcut durumunda düzenlemeye kilitli', status: session.status });
+    return false;
+  }
+  return true;
+}
+
 router.get('/', (req, res) => {
-  const sessions = getDb().prepare(
-    'SELECT id, title, description, status, created_at, updated_at FROM work_sessions WHERE user_id = ? ORDER BY updated_at DESC'
-  ).all(req.user.userId);
-  res.json(sessions);
+  res.json(listSessionsForUser(getDb(), req.user.userId));
 });
 
-// Create new session
 router.post('/', (req, res) => {
+  const db = getDb();
   const id = uuidv4();
-  const { title } = req.body;
-  getDb().prepare(
-    'INSERT INTO work_sessions (id, user_id, title) VALUES (?, ?, ?)'
-  ).run(id, req.user.userId, title || '');
-  const session = getDb().prepare('SELECT * FROM work_sessions WHERE id = ?').get(id);
-  res.json(session);
+  const title = String(req.body?.title || '').trim();
+  db.prepare(`
+    INSERT INTO work_sessions (id, user_id, title, status)
+    VALUES (?, ?, ?, 'draft')
+  `).run(id, req.user.userId, title);
+
+  res.json(loadSessionWithDevices(db, id));
 });
 
-// Get full session with devices + components + units
 router.get('/:id', (req, res) => {
-  const db = getDb();
-  const session = db.prepare('SELECT * FROM work_sessions WHERE id = ? AND user_id = ?').get(req.params.id, req.user.userId);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
-
-  const devices = db.prepare('SELECT * FROM session_devices WHERE session_id = ? ORDER BY position').all(session.id);
-
-  for (const device of devices) {
-    device.components_only = !!device.components_only;
-    const components = db.prepare('SELECT * FROM session_components WHERE device_id = ? ORDER BY position').all(device.id);
-    device.takilanComponents = [];
-    device.components = [];
-
-    for (const comp of components) {
-      comp.units = db.prepare('SELECT * FROM session_component_units WHERE component_id = ? ORDER BY position').all(comp.id);
-      if (comp.list_type === 'takilan') {
-        device.takilanComponents.push(comp);
-      } else {
-        device.components.push(comp);
-      }
-    }
+  const session = loadOwnedSession(req.params.id, req.user.userId);
+  if (!session) {
+    return res.status(404).json({ error: 'Oturum bulunamadı' });
   }
 
-  session.devices = devices;
   res.json(session);
 });
 
-// Update session metadata
 router.put('/:id', (req, res) => {
-  const { title, description, status } = req.body;
   const db = getDb();
-  const session = db.prepare('SELECT * FROM work_sessions WHERE id = ? AND user_id = ?').get(req.params.id, req.user.userId);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
+  const session = loadOwnedSession(req.params.id, req.user.userId);
+  if (!session) {
+    return res.status(404).json({ error: 'Oturum bulunamadı' });
+  }
+  if (!ensureDraft(session, res)) {
+    return;
+  }
 
-  db.prepare("UPDATE work_sessions SET title = ?, description = ?, status = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(title ?? session.title, description ?? session.description, status ?? session.status, req.params.id);
+  const title = req.body?.title ?? session.title;
+  const description = req.body?.description ?? session.description;
+  db.prepare(`
+    UPDATE work_sessions
+    SET title = ?, description = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(title, description, req.params.id);
 
   res.json({ ok: true });
 });
 
-// Delete session
 router.delete('/:id', (req, res) => {
   const db = getDb();
-  // Delete devices first (cascade handles components and units)
-  db.prepare('DELETE FROM session_devices WHERE session_id = ?').run(req.params.id);
-  db.prepare('DELETE FROM work_sessions WHERE id = ? AND user_id = ?').run(req.params.id, req.user.userId);
-  res.json({ ok: true });
+  const session = loadOwnedSession(req.params.id, req.user.userId);
+  if (!session) {
+    return res.status(404).json({ error: 'Oturum bulunamadı' });
+  }
+
+  if (session.status === 'draft') {
+    db.prepare('DELETE FROM work_sessions WHERE id = ? AND user_id = ?').run(req.params.id, req.user.userId);
+    return res.json({ ok: true, deleted: true });
+  }
+
+  if (session.status === 'approved') {
+    db.prepare(`
+      UPDATE work_sessions
+      SET archived_at = datetime('now'),
+          archived_by_user_id = ?,
+          updated_at = datetime('now')
+      WHERE id = ? AND user_id = ?
+    `).run(req.user.userId, req.params.id, req.user.userId);
+    insertSessionEvent(db, req.params.id, req.user.userId, 'archived', {});
+    return res.json({ ok: true, archived: true });
+  }
+
+  return res.status(409).json({ error: 'Sadece taslak veya onaylı oturumlar silinebilir', status: session.status });
 });
 
-// Bulk save entire session state
 router.post('/:id/save-all', (req, res) => {
   const db = getDb();
-  const session = db.prepare('SELECT * FROM work_sessions WHERE id = ? AND user_id = ?').get(req.params.id, req.user.userId);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
+  const session = loadOwnedSession(req.params.id, req.user.userId);
+  if (!session) {
+    return res.status(404).json({ error: 'Oturum bulunamadı' });
+  }
+  if (!ensureDraft(session, res)) {
+    return;
+  }
 
-  const { description, devices } = req.body;
-
-  const saveAll = db.transaction(() => {
-    // Update session metadata
-    db.prepare("UPDATE work_sessions SET description = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(description || '', req.params.id);
-
-    // Clear existing devices (cascade deletes components and units)
-    const existingDevices = db.prepare('SELECT id FROM session_devices WHERE session_id = ?').all(req.params.id);
-    for (const ed of existingDevices) {
-      const existingComps = db.prepare('SELECT id FROM session_components WHERE device_id = ?').all(ed.id);
-      for (const ec of existingComps) {
-        db.prepare('DELETE FROM session_component_units WHERE component_id = ?').run(ec.id);
-      }
-      db.prepare('DELETE FROM session_components WHERE device_id = ?').run(ed.id);
-    }
-    db.prepare('DELETE FROM session_devices WHERE session_id = ?').run(req.params.id);
-
-    // Re-insert all devices
-    if (!devices || !Array.isArray(devices)) return;
-
-    const insertDevice = db.prepare(
-      'INSERT INTO session_devices (session_id, position, model, etiket, seri, not_text, components_only) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    );
-    const insertComp = db.prepare(
-      'INSERT INTO session_components (device_id, list_type, position, type, qty, name, serial, health) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    );
-    const insertUnit = db.prepare(
-      'INSERT INTO session_component_units (component_id, position, name, serial, health) VALUES (?, ?, ?, ?, ?)'
-    );
-
-    devices.forEach((d, di) => {
-      const deviceResult = insertDevice.run(
-        req.params.id, di, d.model || '', d.etiket || '', d.seri || '',
-        d.not || '', d.componentsOnly ? 1 : 0
-      );
-      const deviceId = deviceResult.lastInsertRowid;
-
-      // Insert takilan components
-      if (d.takilanComponents) {
-        d.takilanComponents.forEach((c, ci) => {
-          const compResult = insertComp.run(deviceId, 'takilan', ci, c.type || 'CPU', c.qty || 1, c.name || '', c.serial || '', c.health ?? '');
-          if (c.units && c.units.length > 0) {
-            c.units.forEach((u, ui) => {
-              insertUnit.run(compResult.lastInsertRowid, ui, u.name || '', u.serial || '', u.health ?? '');
-            });
-          }
-        });
-      }
-
-      // Insert cikarilan components
-      if (d.components) {
-        d.components.forEach((c, ci) => {
-          const compResult = insertComp.run(deviceId, 'cikarilan', ci, c.type || 'CPU', c.qty || 1, c.name || '', c.serial || '', c.health ?? '');
-          if (c.units && c.units.length > 0) {
-            c.units.forEach((u, ui) => {
-              insertUnit.run(compResult.lastInsertRowid, ui, u.name || '', u.serial || '', u.health ?? '');
-            });
-          }
-        });
-      }
-    });
-  });
-
-  saveAll();
-
+  replaceSessionData(db, req.params.id, req.body?.description || '', req.body?.devices || []);
   const updated = db.prepare('SELECT updated_at FROM work_sessions WHERE id = ?').get(req.params.id);
   res.json({ ok: true, updated_at: updated.updated_at });
 });
 
-// Get session updated_at for sync polling
+router.post('/:id/submit', asyncHandler(async (req, res) => {
+  const db = getDb();
+  const session = loadOwnedSession(req.params.id, req.user.userId);
+  if (!session) {
+    return res.status(404).json({ error: 'Oturum bulunamadı' });
+  }
+  if (!ensureDraft(session, res)) {
+    return;
+  }
+
+  const validation = await revalidateSessionAgainstSnipe(session);
+  replaceSessionData(db, req.params.id, validation.session.description, validation.session.devices);
+  if (!validation.ok) {
+    return res.status(422).json({
+      error: 'Oturum canlı envanter doğrulamasını geçemedi',
+      issues: validation.issues
+    });
+  }
+
+  db.prepare(`
+    UPDATE work_sessions
+    SET status = 'pending',
+        submitted_at = datetime('now'),
+        submitted_by = ?,
+        reviewed_by = NULL,
+        reviewed_at = NULL,
+        review_comment = '',
+        snipeit_sync_status = NULL,
+        snipeit_sync_started_at = NULL,
+        snipeit_sync_finished_at = NULL,
+        snipeit_sync_summary = NULL,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).run(req.user.userId, req.params.id);
+  insertSessionEvent(db, req.params.id, req.user.userId, 'submitted', {});
+
+  notifyManagers({
+    type: 'session_submitted',
+    title: 'Yeni onay talebi',
+    body: validation.session.title || req.params.id,
+    data: { sessionId: req.params.id }
+  });
+
+  res.json(loadSessionWithDevices(db, req.params.id));
+}));
+
+router.post('/:id/reopen', (req, res) => {
+  const db = getDb();
+  const session = loadOwnedSession(req.params.id, req.user.userId);
+  if (!session) {
+    return res.status(404).json({ error: 'Oturum bulunamadı' });
+  }
+  if (session.status !== 'rejected') {
+    return res.status(409).json({ error: 'Sadece reddedilen oturumlar yeniden açılabilir', status: session.status });
+  }
+
+  db.prepare(`
+    UPDATE work_sessions
+    SET status = 'draft',
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).run(req.params.id);
+  insertSessionEvent(db, req.params.id, req.user.userId, 'reopened', {});
+  createNotification(req.user.userId, {
+    type: 'session_reopened',
+    title: 'Talep tekrar düzenlemeye açıldı',
+    body: session.title || session.id,
+    data: { sessionId: session.id }
+  });
+
+  res.json(loadSessionWithDevices(db, req.params.id));
+});
+
+router.post('/:id/edit-as-new', (req, res) => {
+  const db = getDb();
+  const session = loadOwnedSession(req.params.id, req.user.userId);
+  if (!session) {
+    return res.status(404).json({ error: 'Oturum bulunamadı' });
+  }
+  if (session.status !== 'approved') {
+    return res.status(409).json({ error: 'Sadece onaylı oturumlar yeni taslağa kopyalanabilir', status: session.status });
+  }
+
+  const newSessionId = uuidv4();
+  const clonedDevices = cloneDevicesForDraft(session.devices || []);
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO work_sessions (id, user_id, title, description, status, source_session_id)
+      VALUES (?, ?, ?, '', 'draft', ?)
+    `).run(newSessionId, req.user.userId, session.title || '', session.id);
+
+    replaceSessionData(db, newSessionId, session.description || '', clonedDevices);
+    insertSessionEvent(db, newSessionId, req.user.userId, 'created_from_approved', {
+      source_session_id: session.id,
+      source_title: session.title || ''
+    });
+    insertSessionEvent(db, session.id, req.user.userId, 'cloned_to_new_draft', {
+      new_session_id: newSessionId
+    });
+  });
+
+  tx();
+
+  res.json(loadOwnedSession(newSessionId, req.user.userId));
+});
+
 router.get('/:id/check', (req, res) => {
-  const session = getDb().prepare('SELECT updated_at FROM work_sessions WHERE id = ? AND user_id = ?').get(req.params.id, req.user.userId);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
-  res.json({ updated_at: session.updated_at });
+  const session = getDb().prepare(`
+    SELECT updated_at, status
+    FROM work_sessions
+    WHERE id = ? AND user_id = ? AND archived_at IS NULL
+  `).get(req.params.id, req.user.userId);
+  if (!session) {
+    return res.status(404).json({ error: 'Oturum bulunamadı' });
+  }
+  res.json(session);
 });
 
 module.exports = router;

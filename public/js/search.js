@@ -1,208 +1,545 @@
 const Search = {
-  _searchTimer: null,
-  _compSearchTimer: null,
+  assetTimer: null,
+  componentTimer: null,
+  metaTimer: null,
+  componentResults: new Map(),
+  assetResults: new Map(),
+  locationResults: new Map(),
+  snipeStatusFetchedAt: 0,
 
   highlight(text, query) {
-    if (!text) return '\u2014';
-    const idx = text.toLowerCase().indexOf(query.toLowerCase());
-    if (idx === -1) return text;
-    return text.slice(0, idx)
-      + `<span class="hi">${text.slice(idx, idx + query.length)}</span>`
-      + text.slice(idx + query.length);
+    if (!text) return '-';
+    if (!query) return text;
+    const index = text.toLowerCase().indexOf(query.toLowerCase());
+    if (index === -1) return text;
+    return `${text.slice(0, index)}<span class="hi">${text.slice(index, index + query.length)}</span>${text.slice(index + query.length)}`;
   },
 
-  closeAllDropdowns() {
-    document.querySelectorAll('.search-dropdown.open').forEach(dd => dd.classList.remove('open'));
-  },
+  async ensureSnipeStatus(force = false) {
+    if (!force && Date.now() - Search.snipeStatusFetchedAt < 15000 && App.snipeStatus) {
+      return App.snipeStatus;
+    }
 
-  // Device inventory search (server-side)
-  onSearchInput(input, field, di) {
-    const q = input.value.trim();
-    const dd = document.getElementById('dd_'+field+'_'+di);
-    if (!dd) return;
-    if (!App.ddState[di]) App.ddState[di] = {};
-    if (!App.ddState[di][field]) App.ddState[di][field] = {selected:-1};
-    App.ddState[di][field].selected = -1;
-
-    if (!q || q.length < 2) { dd.classList.remove('open'); return; }
-
-    clearTimeout(Search._searchTimer);
-    Search._searchTimer = setTimeout(async () => {
-      const results = await API.get('/api/inventory/assets?q=' + encodeURIComponent(q));
-      if (!results || results.length === 0) {
-        dd.innerHTML = '<div class="search-empty">Sonuç bulunamadı</div>';
-        dd.classList.add('open');
-        return;
-      }
-      Search._lastAssetResults = results;
-      dd.innerHTML = results.map((d, i) => {
-        const model  = d.Model || d.model || '\u2014';
-        const etiket = d['Asset Tag'] || '\u2014';
-        const serial = d.Serial || '\u2014';
-        return `<div class="search-item" onmousedown="Search.selectDevice(${i},${di})">
-          <div class="search-item-main">${Search.highlight(model,q)} &middot; <span style="color:var(--accent2)">${Search.highlight(etiket,q)}</span></div>
-          <div class="search-item-sub">SN: ${Search.highlight(serial,q)}</div>
-        </div>`;
-      }).join('');
-      dd.classList.add('open');
-    }, 200);
-  },
-
-  onSearchKey(event, field, di) {
-    const dd = document.getElementById('dd_'+field+'_'+di);
-    if (!dd || !dd.classList.contains('open')) return;
-    const items = dd.querySelectorAll('.search-item');
-    if (items.length === 0) return;
-    if (!App.ddState[di]) App.ddState[di] = {};
-    if (!App.ddState[di][field]) App.ddState[di][field] = {selected:-1};
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      App.ddState[di][field].selected = Math.min(App.ddState[di][field].selected+1, items.length-1);
-      items.forEach((el,i) => el.classList.toggle('active', i===App.ddState[di][field].selected));
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      App.ddState[di][field].selected = Math.max(App.ddState[di][field].selected-1, 0);
-      items.forEach((el,i) => el.classList.toggle('active', i===App.ddState[di][field].selected));
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      const sel = App.ddState[di][field].selected;
-      if (sel >= 0 && items[sel]) items[sel].dispatchEvent(new MouseEvent('mousedown'));
-    } else if (event.key === 'Escape') {
-      dd.classList.remove('open');
+    try {
+      const status = await API.get('/api/snipeit/status');
+      Search.snipeStatusFetchedAt = Date.now();
+      await App.updateSnipeStatus(status);
+      return status;
+    } catch (error) {
+      const fallback = error.data || { configured: false, healthy: false, error: error.message };
+      Search.snipeStatusFetchedAt = Date.now();
+      await App.updateSnipeStatus(fallback);
+      return fallback;
     }
   },
 
-  closeDropdown(field, di, delay) {
-    setTimeout(() => {
-      const dd = document.getElementById('dd_'+field+'_'+di);
-      if (dd) dd.classList.remove('open');
-    }, delay||0);
+  async searchAssets(query) {
+    const status = await Search.ensureSnipeStatus();
+    if (status.healthy) {
+      try {
+        return await API.get(`/api/snipeit/assets/search?q=${encodeURIComponent(query)}`);
+      } catch (_) {}
+    }
+
+    const local = await API.get(`/api/inventory/assets?q=${encodeURIComponent(query)}`);
+    return (local || []).map((row) => ({
+      id: null,
+      source: 'local',
+      asset_tag: row['Asset Tag'] || '',
+      serial: row.Serial || '',
+      model: row.Model || '',
+      location: row.Location || '',
+      status_label: row.Status || ''
+    }));
   },
 
-  selectDevice(resultIdx, di) {
-    const d = Search._lastAssetResults[resultIdx];
-    if (!d) return;
-    App.devices[di].model  = d.Model || '';
-    App.devices[di].etiket = d['Asset Tag'] || '';
-    App.devices[di].seri   = d.Serial || '';
-    ['model','etiket','seri'].forEach(f => {
-      const dd = document.getElementById('dd_'+f+'_'+di);
-      if (dd) dd.classList.remove('open');
+  async fetchCurrentState(assetId) {
+    const result = await API.get(`/api/snipeit/assets/${encodeURIComponent(assetId)}/current-state`);
+    return {
+      snapshot: result?.snapshot || null,
+      fetchedAt: result?.fetched_at || null
+    };
+  },
+
+  async hydrateDeviceCurrentState(deviceIndex, { showWarning = false } = {}) {
+    const device = App.devices[deviceIndex];
+    if (!device || device.assetResolutionMode !== 'matched' || !device.snipeitAssetId) {
+      return false;
+    }
+
+    try {
+      const state = await Search.fetchCurrentState(device.snipeitAssetId);
+      device.currentStateSnapshot = state.snapshot;
+      device.currentStateFetchedAt = state.fetchedAt;
+      return true;
+    } catch (error) {
+      if (showWarning) {
+        App.showToast(error?.data?.error || 'Mevcut cihaz durumu alınamadı', 'warn');
+      }
+      return false;
+    }
+  },
+
+  async searchComponents(query) {
+    const status = await Search.ensureSnipeStatus();
+    if (status.healthy) {
+      try {
+        return await API.get(`/api/snipeit/components/search?q=${encodeURIComponent(query)}`);
+      } catch (_) {}
+    }
+
+    const local = await API.get(`/api/inventory/components?q=${encodeURIComponent(query)}`);
+    return (local || []).map((row) => ({
+      id: null,
+      source: 'local',
+      name: row.Name || '',
+      serial: row.Serial || '',
+      category: row.Category || '',
+      location: row.Location || '',
+      remaining: row.Remaining || 0,
+      qty: row.Total || 0
+    }));
+  },
+
+  async searchStatusLabels(query) {
+    const status = await Search.ensureSnipeStatus();
+    if (!status.healthy) return [];
+    try {
+      return await API.get(`/api/snipeit/statuslabels/search?q=${encodeURIComponent(query)}`);
+    } catch (_) {
+      return [];
+    }
+  },
+
+  async searchLocations(query) {
+    const status = await Search.ensureSnipeStatus();
+    if (!status.healthy) return [];
+    try {
+      return await API.get(`/api/snipeit/locations/search?q=${encodeURIComponent(query)}`);
+    } catch (_) {
+      return [];
+    }
+  },
+
+  closeAllDropdowns() {
+    document.querySelectorAll('.search-dropdown.open').forEach((dropdown) => dropdown.classList.remove('open'));
+  },
+
+  onSearchInput(input, field, deviceIndex) {
+    const query = input.value.trim();
+    const dropdown = document.getElementById(`dd_${field}_${deviceIndex}`);
+    if (!dropdown) return;
+    if (!App.ddState[deviceIndex]) App.ddState[deviceIndex] = {};
+    if (!App.ddState[deviceIndex][field]) App.ddState[deviceIndex][field] = { selected: -1 };
+    App.ddState[deviceIndex][field].selected = -1;
+
+    if (!query || query.length < 2) {
+      dropdown.classList.remove('open');
+      return;
+    }
+
+    clearTimeout(Search.assetTimer);
+    Search.assetTimer = setTimeout(async () => {
+      const results = await Search.searchAssets(query);
+      Search.assetResults.set(`asset_${field}_${deviceIndex}`, results);
+
+      if (!results.length) {
+        dropdown.innerHTML = '<div class="search-empty">Sonuc bulunamadı</div>';
+        dropdown.classList.add('open');
+        return;
+      }
+
+      dropdown.innerHTML = results.map((item, resultIndex) => `
+        <div class="search-item" onmousedown="Search.selectDevice('${field}', ${deviceIndex}, ${resultIndex})">
+          <div class="search-item-main">
+            ${Search.highlight(item.model || '-', query)}
+            <span style="color:var(--accent2)">· ${Search.highlight(item.asset_tag || '-', query)}</span>
+            <span class="search-source ${item.source}">${item.source === 'snipeit' ? 'Canlı' : 'Yerel'}</span>
+          </div>
+          <div class="search-item-sub">SN: ${Search.highlight(item.serial || '-', query)} · ${item.location || '-'}</div>
+        </div>
+      `).join('');
+      dropdown.classList.add('open');
+
+      if ((field === 'etiket' || field === 'seri')) {
+        const exact = results.filter((item) => {
+          const needle = query.toLowerCase();
+          return item.source === 'snipeit' && (
+            (field === 'etiket' && item.asset_tag?.toLowerCase() === needle) ||
+            (field === 'seri' && item.serial?.toLowerCase() === needle)
+          );
+        });
+        if (exact.length === 1) {
+          Search.selectDevice(field, deviceIndex, results.indexOf(exact[0]));
+        }
+      }
+    }, 220);
+  },
+
+  onSearchKey(event, field, deviceIndex) {
+    const dropdown = document.getElementById(`dd_${field}_${deviceIndex}`);
+    if (!dropdown || !dropdown.classList.contains('open')) return;
+    const items = dropdown.querySelectorAll('.search-item');
+    if (!items.length) return;
+    if (!App.ddState[deviceIndex]) App.ddState[deviceIndex] = {};
+    if (!App.ddState[deviceIndex][field]) App.ddState[deviceIndex][field] = { selected: -1 };
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      App.ddState[deviceIndex][field].selected = Math.min(App.ddState[deviceIndex][field].selected + 1, items.length - 1);
+      items.forEach((item, index) => item.classList.toggle('active', index === App.ddState[deviceIndex][field].selected));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      App.ddState[deviceIndex][field].selected = Math.max(App.ddState[deviceIndex][field].selected - 1, 0);
+      items.forEach((item, index) => item.classList.toggle('active', index === App.ddState[deviceIndex][field].selected));
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      const selected = App.ddState[deviceIndex][field].selected;
+      if (selected >= 0 && items[selected]) items[selected].dispatchEvent(new MouseEvent('mousedown'));
+    } else if (event.key === 'Escape') {
+      dropdown.classList.remove('open');
+    }
+  },
+
+  closeDropdown(field, deviceIndex, delay) {
+    setTimeout(() => {
+      const dropdown = document.getElementById(`dd_${field}_${deviceIndex}`);
+      if (dropdown) dropdown.classList.remove('open');
+    }, delay || 0);
+  },
+
+  onAssetMetaSearchInput(input, field, deviceIndex) {
+    const query = input.value.trim();
+    const dropdown = document.getElementById(`dd_meta_${field}_${deviceIndex}`);
+    if (!dropdown) return;
+
+    clearTimeout(Search.metaTimer);
+    Search.metaTimer = setTimeout(async () => {
+      const results = field === 'status'
+        ? await Search.searchStatusLabels(query)
+        : await Search.searchLocations(query);
+      Search.locationResults.set(`meta_${field}_${deviceIndex}`, results);
+
+      if (!results.length) {
+        dropdown.innerHTML = '<div class="search-empty">Sonuc bulunamadı</div>';
+        dropdown.classList.add('open');
+        return;
+      }
+
+      dropdown.innerHTML = results.map((item, index) => `
+        <div class="search-item" onmousedown="Search.selectAssetMeta('${field}', ${deviceIndex}, ${index})">
+          <div class="search-item-main">${Search.highlight(item.name || '-', query)}</div>
+        </div>
+      `).join('');
+      dropdown.classList.add('open');
+    }, 220);
+  },
+
+  selectAssetMeta(field, deviceIndex, resultIndex) {
+    const results = Search.locationResults.get(`meta_${field}_${deviceIndex}`) || [];
+    const item = results[resultIndex];
+    if (!item) return;
+
+    if (field === 'status') {
+      Devices.updateDevice(deviceIndex, 'proposedNewAssetStatus', item.name || '');
+    } else {
+      Devices.updateDevice(deviceIndex, 'proposedNewAssetLocation', item.name || '');
+    }
+    const dropdown = document.getElementById(`dd_meta_${field}_${deviceIndex}`);
+    if (dropdown) dropdown.classList.remove('open');
+    Devices.renderDeviceList();
+    App.render();
+    App.scheduleAutoSave();
+  },
+
+  async selectDevice(field, deviceIndex, resultIndex) {
+    const results = Search.assetResults.get(`asset_${field}_${deviceIndex}`) || [];
+    const item = results[resultIndex];
+    if (!item) return;
+
+    if (item.source === 'snipeit' && item.id) {
+      Devices.setMatchedAsset(deviceIndex, item);
+      await Search.hydrateDeviceCurrentState(deviceIndex, { showWarning: true });
+    } else {
+      App.devices[deviceIndex].model = item.model || '';
+      App.devices[deviceIndex].etiket = item.asset_tag || '';
+      App.devices[deviceIndex].seri = item.serial || '';
+      Devices.clearAssetResolution(deviceIndex);
+    }
+
+    ['model', 'etiket', 'seri'].forEach((key) => {
+      const dropdown = document.getElementById(`dd_${key}_${deviceIndex}`);
+      if (dropdown) dropdown.classList.remove('open');
     });
     Devices.renderDeviceList();
     App.render();
     App.scheduleAutoSave();
-    App.showToast((d.Model||'') + ' ' + (d['Asset Tag']||'') + ' yüklendi');
   },
 
-  _lastAssetResults: [],
-  _lastCompResults: [],
+  async validateDevice(deviceIndex, showToast = false) {
+    const device = App.devices[deviceIndex];
+    if (!device) return;
 
-  // Component inventory search (server-side)
-  compDdId(listType, rowIdx) {
-    const isSn = listType.startsWith('sn_');
-    const actual = isSn ? listType.slice(3) : listType;
-    const parts = actual.split('_');
-    const prefix = parts[0] === 'comp' ? 'compdd' : 'takilandd';
-    const snTag = isSn ? 'sn' : '';
-    if (parts.length === 2) return `${snTag}${prefix}_${parts[1]}_${rowIdx}`;
-    return `${snTag}${prefix}_${parts[1]}_${parts[2]}_${rowIdx}`;
-  },
+    try {
+      await Search.ensureSnipeStatus(true);
+      let asset = null;
+      if (device.etiket) {
+        try {
+          asset = await API.get(`/api/snipeit/assets/bytag/${encodeURIComponent(device.etiket)}`);
+        } catch (_) {}
+      }
+      if (!asset && device.seri) {
+        try {
+          asset = await API.get(`/api/snipeit/assets/byserial/${encodeURIComponent(device.seri)}`);
+        } catch (_) {}
+      }
 
-  onCompSearch(input, listType, rowIdx) {
-    const q = input.value.trim();
-    const dd = document.getElementById(Search.compDdId(listType, rowIdx));
-    if (!dd) return;
-    if (!q || q.length < 2) { dd.classList.remove('open'); return; }
-
-    clearTimeout(Search._compSearchTimer);
-    Search._compSearchTimer = setTimeout(async () => {
-      const results = await API.get('/api/inventory/components?q=' + encodeURIComponent(q));
-      if (!results || results.length === 0) {
-        dd.innerHTML = '<div class="search-empty">Sonuç bulunamadı</div>';
-        dd.classList.add('open');
+      if (asset) {
+        Devices.setMatchedAsset(deviceIndex, asset);
+        await Search.hydrateDeviceCurrentState(deviceIndex, { showWarning: showToast });
+        Devices.renderDeviceList();
+        App.render();
+        App.scheduleAutoSave();
+        if (showToast) App.showToast('Envanter sunucusu doğrulandı');
         return;
       }
-      Search._lastCompResults = results;
-      dd.innerHTML = results.map((item, idx) => `
-        <div class="search-item" onmousedown="Search.selectComponent('${listType}',${rowIdx},${idx})">
-          <div class="search-item-main">${Search.highlight(item.Name||'', q)}</div>
-          <div class="search-item-sub">${item.Category||''}${item.Serial ? ' &middot; SN: ' + item.Serial : ''}</div>
-        </div>
-      `).join('');
-      dd.classList.add('open');
-    }, 200);
+    } catch (_) {}
+
+    Devices.clearAssetResolution(deviceIndex);
+    Devices.renderDeviceList();
+    App.render();
+    App.scheduleAutoSave();
+    if (showToast) App.showToast('Envanter sunucusu doğrulanamadı');
   },
 
-  onCompSearchKey(event, listType, rowIdx) {
-    const dd = document.getElementById(Search.compDdId(listType, rowIdx));
-    if (!dd || !dd.classList.contains('open')) return;
-    const items = dd.querySelectorAll('.search-item');
+  compDdId(listType, rowIndex) {
+    const isSerial = listType.startsWith('sn_');
+    const actual = isSerial ? listType.slice(3) : listType;
+    const parts = actual.split('_');
+    const serialPrefix = isSerial ? 'sn' : '';
+    if (parts[0] === 'locunit') {
+      const prefix = parts[1] === 'comp' ? 'compdd' : 'takilandd';
+      return `loc${serialPrefix}${prefix}_${parts[2]}_${parts[3]}_${rowIndex}`;
+    }
+    if (parts[0] === 'loccomp') {
+      const prefix = parts[1] === 'comp' ? 'compdd' : 'takilandd';
+      return `loc${serialPrefix}${prefix}_${parts[2]}_${rowIndex}`;
+    }
+    if (parts[0] === 'unit') {
+      const prefix = parts[1] === 'comp' ? 'compdd' : 'takilandd';
+      return `${serialPrefix}${prefix}_${parts[2]}_${parts[3]}_${rowIndex}`;
+    }
+
+    const prefix = parts[0] === 'comp' ? 'compdd' : 'takilandd';
+    return `${serialPrefix}${prefix}_${parts[1]}_${rowIndex}`;
+  },
+
+  renderComponentResults(dropdown, results, query, onSelectExpression) {
+    if (!results.length) {
+      dropdown.innerHTML = '<div class="search-empty">Sonuc bulunamadı</div>';
+      dropdown.classList.add('open');
+      return;
+    }
+
+    dropdown.innerHTML = results.map((item, index) => `
+      <div class="search-item" onmousedown="${onSelectExpression(index)}">
+        <div class="search-item-main">
+          ${Search.highlight(item.name || '', query)}
+          <span class="search-source ${item.source}">${item.source === 'snipeit' ? 'Canlı' : 'Yerel'}</span>
+        </div>
+        <div class="search-item-sub">${item.category || ''}${item.serial ? ` · SN: ${Search.highlight(item.serial, query)}` : ''}</div>
+      </div>
+    `).join('');
+    dropdown.classList.add('open');
+  },
+
+  onComponentSearch(input, listType, deviceIndex, componentIndex, field) {
+    const query = input.value.trim();
+    const key = field === 'serial' ? `sn_${listType}_${deviceIndex}` : `${listType}_${deviceIndex}`;
+    const dropdown = document.getElementById(Search.compDdId(key, componentIndex));
+    if (!dropdown) return;
+
+    if (!query || query.length < 2) {
+      dropdown.classList.remove('open');
+      return;
+    }
+
+    clearTimeout(Search.componentTimer);
+    Search.componentTimer = setTimeout(async () => {
+      const results = await Search.searchComponents(query);
+      Search.componentResults.set(`${key}_${componentIndex}`, results);
+      Search.renderComponentResults(
+        dropdown,
+        results,
+        query,
+        (resultIndex) => `Search.selectComponent('${listType}', ${deviceIndex}, ${componentIndex}, ${resultIndex})`
+      );
+
+      if (field === 'serial') {
+        const exact = results.filter((item) => item.source === 'snipeit' && item.serial?.toLowerCase() === query.toLowerCase());
+        if (exact.length === 1) {
+          Search.selectComponent(listType, deviceIndex, componentIndex, results.indexOf(exact[0]));
+        }
+      }
+    }, 220);
+  },
+
+  onUnitSearch(input, listType, deviceIndex, componentIndex, unitIndex, field) {
+    const query = input.value.trim();
+    const key = field === 'serial'
+      ? `sn_unit_${listType}_${deviceIndex}_${componentIndex}`
+      : `unit_${listType}_${deviceIndex}_${componentIndex}`;
+    const dropdown = document.getElementById(Search.compDdId(key, unitIndex));
+    if (!dropdown) return;
+
+    if (!query || query.length < 2) {
+      dropdown.classList.remove('open');
+      return;
+    }
+
+    clearTimeout(Search.componentTimer);
+    Search.componentTimer = setTimeout(async () => {
+      const results = await Search.searchComponents(query);
+      Search.componentResults.set(`${key}_${unitIndex}`, results);
+      Search.renderComponentResults(
+        dropdown,
+        results,
+        query,
+        (resultIndex) => `Search.selectUnit('${listType}', ${deviceIndex}, ${componentIndex}, ${unitIndex}, ${resultIndex})`
+      );
+
+      if (field === 'serial') {
+        const exact = results.filter((item) => item.source === 'snipeit' && item.serial?.toLowerCase() === query.toLowerCase());
+        if (exact.length === 1) {
+          Search.selectUnit(listType, deviceIndex, componentIndex, unitIndex, results.indexOf(exact[0]));
+        }
+      }
+    }, 220);
+  },
+
+  onCompSearchKey(event, listType, rowIndex) {
+    const dropdown = document.getElementById(Search.compDdId(listType, rowIndex));
+    if (!dropdown || !dropdown.classList.contains('open')) return;
+    const items = dropdown.querySelectorAll('.search-item');
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      const next = dd.querySelector('.search-item.active');
-      const idx  = next ? [...items].indexOf(next) + 1 : 0;
-      items.forEach(el => el.classList.remove('active'));
-      if (items[Math.min(idx, items.length-1)]) items[Math.min(idx, items.length-1)].classList.add('active');
+      const active = dropdown.querySelector('.search-item.active');
+      const index = active ? [...items].indexOf(active) + 1 : 0;
+      items.forEach((item) => item.classList.remove('active'));
+      if (items[Math.min(index, items.length - 1)]) items[Math.min(index, items.length - 1)].classList.add('active');
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      const cur = dd.querySelector('.search-item.active');
-      const idx = cur ? [...items].indexOf(cur) - 1 : items.length - 1;
-      items.forEach(el => el.classList.remove('active'));
-      if (items[Math.max(idx, 0)]) items[Math.max(idx, 0)].classList.add('active');
+      const active = dropdown.querySelector('.search-item.active');
+      const index = active ? [...items].indexOf(active) - 1 : items.length - 1;
+      items.forEach((item) => item.classList.remove('active'));
+      if (items[Math.max(index, 0)]) items[Math.max(index, 0)].classList.add('active');
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      const active = dd.querySelector('.search-item.active');
+      const active = dropdown.querySelector('.search-item.active');
       if (active) active.dispatchEvent(new MouseEvent('mousedown'));
     } else if (event.key === 'Escape') {
       Search.closeAllDropdowns();
     }
   },
 
-  closeCompDD(listType, rowIdx, delay) {
-    setTimeout(() => {
-      const dd = document.getElementById(Search.compDdId(listType, rowIdx));
-      if (dd) dd.classList.remove('open');
-    }, delay);
+  onComponentLocationSearch(input, keyBase, rowIndex, deviceIndex, componentIndex, unitIndex, isUnit) {
+    const query = input.value.trim();
+    const dropdown = document.getElementById(Search.compDdId(keyBase, rowIndex));
+    if (!dropdown) return;
+
+    clearTimeout(Search.metaTimer);
+    Search.metaTimer = setTimeout(async () => {
+      const results = await Search.searchLocations(query);
+      Search.locationResults.set(`${keyBase}_${rowIndex}`, results);
+      if (!results.length) {
+        dropdown.innerHTML = '<div class="search-empty">Sonuc bulunamadı</div>';
+        dropdown.classList.add('open');
+        return;
+      }
+
+      dropdown.innerHTML = results.map((item, index) => `
+        <div class="search-item" onmousedown="Search.selectComponentLocation('${keyBase}', ${rowIndex}, ${index}, ${deviceIndex}, ${componentIndex}, ${unitIndex === null ? -1 : unitIndex}, ${isUnit ? 'true' : 'false'})">
+          <div class="search-item-main">${Search.highlight(item.name || '-', query)}</div>
+        </div>
+      `).join('');
+      dropdown.classList.add('open');
+    }, 220);
   },
 
-  inferType(category) {
-    const c = (category || '').toLowerCase();
-    if (c.includes('disk') || c.includes('sas') || c.includes('ssd') || c.includes('hdd') || c.includes('nvme')) return 'DISK';
-    if (c.includes('ram') || c.includes('memory') || c.includes('dimm')) return 'RAM';
-    if (c.includes('cpu') || c.includes('processor') || c.includes('xeon')) return 'CPU';
-    if (c.includes('nic') || c.includes('network') || c.includes('ethernet') || c.includes('adapter')) return 'NIC';
-    return null;
-  },
+  selectComponentLocation(keyBase, rowIndex, resultIndex, deviceIndex, componentIndex, unitIndex, isUnit) {
+    const results = Search.locationResults.get(`${keyBase}_${rowIndex}`) || [];
+    const item = results[resultIndex];
+    if (!item) return;
 
-  selectComponent(listType, rowIdx, compIdx) {
-    const comp = Search._lastCompResults[compIdx];
-    if (!comp) return;
-    const name   = comp.Name   || '';
-    const serial = comp.Serial || '';
-    const type   = Search.inferType(comp.Category);
-    const actualListType = listType.startsWith('sn_') ? listType.slice(3) : listType;
-    const parts  = actualListType.split('_');
-    const prefix = parts[0];
-    const di     = parseInt(parts[1]);
-    const arr    = prefix === 'comp' ? App.devices[di].components : App.devices[di].takilanComponents;
-
-    if (parts.length === 3) {
-      const ci = parseInt(parts[2]);
-      arr[ci].units[rowIdx].name   = name;
-      arr[ci].units[rowIdx].serial = serial;
+    if (isUnit) {
+      const listType = keyBase.split('_')[1];
+      if (listType === 'comp') Components.updateCompUnit(deviceIndex, componentIndex, unitIndex, 'proposedNewComponentLocation', item.name || '');
+      else Components.updateTakilanUnit(deviceIndex, componentIndex, unitIndex, 'proposedNewComponentLocation', item.name || '');
     } else {
-      arr[rowIdx].name   = name;
-      arr[rowIdx].serial = serial;
-      if (type) arr[rowIdx].type = type;
+      const listType = keyBase.split('_')[1];
+      if (listType === 'comp') Components.updateComp(deviceIndex, componentIndex, 'proposedNewComponentLocation', item.name || '');
+      else Components.updateTakilan(deviceIndex, componentIndex, 'proposedNewComponentLocation', item.name || '');
     }
-    if (prefix === 'comp') Components.renderCompListFor(di); else Components.renderTakilanListFor(di);
+    const dropdown = document.getElementById(Search.compDdId(keyBase, rowIndex));
+    if (dropdown) dropdown.classList.remove('open');
+  },
+
+  closeCompDD(listType, rowIndex, delay) {
+    setTimeout(() => {
+      const dropdown = document.getElementById(Search.compDdId(listType, rowIndex));
+      if (dropdown) dropdown.classList.remove('open');
+    }, delay || 0);
+  },
+
+  selectComponent(listType, deviceIndex, componentIndex, resultIndex) {
+    const resultKey = `${listType}_${deviceIndex}`;
+    const serialKey = `sn_${listType}_${deviceIndex}`;
+    const results = Search.componentResults.get(`${resultKey}_${componentIndex}`)
+      || Search.componentResults.get(`${serialKey}_${componentIndex}`)
+      || [];
+    const item = results[resultIndex];
+    if (!item) return;
+
+    Components.setComponentMatch(deviceIndex, listType, componentIndex, item);
+    const list = Components.getList(deviceIndex, listType);
+    const component = list?.[componentIndex];
+    if (component && item.source !== 'snipeit') {
+      component.name = item.name || component.name;
+      component.serial = Components.supportsSerial(component.type) ? (item.serial || component.serial) : '';
+      Components.clearComponentMatch(component);
+    }
+
+    if (listType === 'comp') Components.renderCompListFor(deviceIndex);
+    else Components.renderTakilanListFor(deviceIndex);
+    App.render();
+    App.scheduleAutoSave();
+  },
+
+  selectUnit(listType, deviceIndex, componentIndex, unitIndex, resultIndex) {
+    const resultKey = `unit_${listType}_${deviceIndex}_${componentIndex}`;
+    const serialKey = `sn_unit_${listType}_${deviceIndex}_${componentIndex}`;
+    const results = Search.componentResults.get(`${resultKey}_${unitIndex}`)
+      || Search.componentResults.get(`${serialKey}_${unitIndex}`)
+      || [];
+    const item = results[resultIndex];
+    if (!item) return;
+
+    Components.setUnitMatch(deviceIndex, listType, componentIndex, unitIndex, item);
+    const list = Components.getList(deviceIndex, listType);
+    const unit = list?.[componentIndex]?.units?.[unitIndex];
+    if (unit && item.source !== 'snipeit') {
+      unit.name = item.name || unit.name;
+      unit.serial = item.serial || unit.serial;
+      Components.clearUnitMatch(unit);
+    }
+
+    if (listType === 'comp') Components.renderCompListFor(deviceIndex);
+    else Components.renderTakilanListFor(deviceIndex);
     App.render();
     App.scheduleAutoSave();
   }
 };
 
-// Close dropdowns on outside click
-document.addEventListener('mousedown', e => {
-  if (!e.target.closest('.search-wrap')) Search.closeAllDropdowns();
+document.addEventListener('mousedown', (event) => {
+  if (!event.target.closest('.search-wrap')) Search.closeAllDropdowns();
 });

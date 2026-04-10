@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Inventory Mail Generator</title>
+<title>Envanter Operasyon Merkezi</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
@@ -12,40 +12,46 @@
 
 <header class="header">
   <div class="header-brand">
-    <div class="logo">IMG</div>
-    <h1>Inventory Mail Generator</h1>
+    <div class="logo">EOM</div>
+    <div>
+      <h1>Envanter Operasyon Merkezi</h1>
+    </div>
   </div>
   <div class="header-actions">
+    <button class="btn btn-ghost btn-sm" id="headerSessionsNav" type="button" onclick="App.showSessionList()">Taslaklarım</button>
+    <button class="btn btn-ghost btn-sm" id="headerApprovalNav" type="button" onclick="App.showApprovalView()" hidden>Onay Kuyruğu</button>
     <div class="header-user" id="headerUser"></div>
     <div class="header-editor-actions" id="headerEditorActions" hidden>
       <div class="save-indicator" id="saveIndicator"></div>
       <button class="btn btn-ghost" onclick="App.backToSessions()" title="Taslaklar">
-        <span class="material-symbols-outlined" style="font-size:16px">arrow_back</span>
+        <span class="material-symbols-outlined md">arrow_back</span>
         <span class="btn-label">Taslaklar</span>
       </button>
-      <button class="btn btn-ghost" onclick="App.renameCurrentSession()" title="Adı Değiştir">
-        <span class="material-symbols-outlined" style="font-size:16px">edit</span>
+      <button class="btn btn-ghost" id="renameSessionBtn" onclick="App.renameCurrentSession()" title="Adı Değiştir">
+        <span class="material-symbols-outlined md">edit</span>
         <span class="btn-label">Adı Değiştir</span>
       </button>
-      <button class="btn btn-ghost" onclick="App.resetForm()" title="Temizle">
-        <span class="material-symbols-outlined" style="font-size:16px">refresh</span>
+      <button class="btn btn-ghost" id="resetSessionBtn" onclick="App.resetForm()" title="Temizle">
+        <span class="material-symbols-outlined md">refresh</span>
         <span class="btn-label">Temizle</span>
       </button>
       <button class="btn btn-accent2" onclick="Email.copyHTML()" title="HTML Kopyala">
-        <span class="material-symbols-outlined" style="font-size:16px">content_copy</span>
+        <span class="material-symbols-outlined md">content_copy</span>
         <span class="btn-label">HTML Kopyala</span>
       </button>
     </div>
   </div>
 </header>
 
+<div class="snipe-banner" id="snipeBanner" hidden></div>
+
 <!-- SESSION LIST VIEW -->
 <div class="sessions-view" id="sessionsView" style="display:none">
   <div class="sessions-container">
     <div class="sessions-header">
-      <h2>Taslaklar</h2>
+      <h2>Taleplerim</h2>
       <button class="btn btn-accent2" onclick="App.createSession()">
-        <span class="material-symbols-outlined" style="font-size:18px">add</span>
+        <span class="material-symbols-outlined lg">add</span>
         Yeni Taslak
       </button>
     </div>
@@ -57,11 +63,14 @@
 <div class="main" id="editorView" style="display:none">
   <!-- LEFT PANEL: INPUT -->
   <div class="panel">
+    <div id="editorStatusBanner" class="editor-status-banner"></div>
+    <div id="editorMeta"></div>
+    <div id="editorAlerts" hidden></div>
     <textarea id="f_description" rows="3" hidden style="display:none"></textarea>
     <div id="deviceList"></div>
     <div style="margin-top:8px;">
-      <button class="btn btn-ghost btn-sm" onclick="Devices.addDevice()" style="width:100%">
-        <span class="material-symbols-outlined" style="font-size:16px">add_circle_outline</span>
+      <button class="btn btn-ghost btn-sm" id="addDeviceBtn" onclick="Devices.addDevice()" style="width:100%">
+        <span class="material-symbols-outlined md">add_circle_outline</span>
         Cihaz Ekle
       </button>
     </div>
@@ -70,25 +79,86 @@
   <!-- RIGHT PANEL: PREVIEW -->
   <div class="preview-panel">
     <div class="preview-topbar">
-      <div class="panel-title" style="margin:0">E-Posta Önizleme</div>
-      <div style="display:flex;gap:8px">
+      <div class="panel-title" style="margin:0">Talep Önizleme</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn btn-success btn-sm" id="submitSessionBtn" type="button" onclick="App.submitCurrentSession()">
+          <span class="material-symbols-outlined sm">send</span>
+          Onaya Gönder
+        </button>
+        <button class="btn btn-accent2 btn-sm" id="editAsNewSessionBtn" type="button" onclick="App.editApprovedAsNew()" hidden>
+          <span class="material-symbols-outlined sm">content_copy</span>
+          Yeni Talep Olarak Düzenle
+        </button>
+        <button class="btn btn-danger btn-sm" id="archiveApprovedSessionBtn" type="button" onclick="App.archiveApprovedSession()" hidden>
+          <span class="material-symbols-outlined sm">delete</span>
+          Listeden Kaldır
+        </button>
+        <button class="btn btn-warn btn-sm" id="reopenSessionBtn" type="button" onclick="App.reopenCurrentSession()" hidden>
+          <span class="material-symbols-outlined sm">restart_alt</span>
+          Yeniden Aç
+        </button>
         <button class="btn btn-ghost btn-sm" onclick="Email.copyHTML()">
-          <span class="material-symbols-outlined" style="font-size:14px">content_copy</span>
+          <span class="material-symbols-outlined sm">content_copy</span>
           HTML Kopyala
         </button>
       </div>
     </div>
-    <div class="preview-frame">
-      <div class="preview-email-chrome">
-        <div class="dot"></div>
-        <div class="dot"></div>
-        <div class="dot"></div>
-        <span>E-Posta Önizleme</span>
+    <div class="preview-grid">
+      <div class="preview-frame">
+        <div class="preview-email-chrome">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <span>E-Posta Önizleme</span>
+        </div>
+        <div class="preview-content">
+          <div id="emailPreview"></div>
+        </div>
       </div>
-      <div class="preview-content">
-        <div id="emailPreview"></div>
+      <div class="preview-frame">
+        <div class="preview-email-chrome">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <span>Mevcut Cihaz Durumu</span>
+        </div>
+        <div class="preview-content">
+          <div id="currentStatePreview"></div>
+        </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- APPROVAL VIEW -->
+<div class="approval-view" id="approvalView" style="display:none">
+  <div class="approval-sidebar">
+    <div class="approval-section-header">
+      <h2>Onay Kuyruğu</h2>
+      <div id="approvalFilters" class="approval-filters"></div>
+    </div>
+    <div class="approval-dashboard" id="approvalDashboard"></div>
+    <div class="approval-queue-list" id="approvalQueueList"></div>
+  </div>
+  <div class="approval-content" id="approvalDetail"></div>
+</div>
+
+<!-- PIN CHANGE MODAL -->
+<div class="modal-backdrop" id="pinChangeModal" hidden>
+  <div class="modal-card">
+    <div class="modal-kicker">Güvenlik</div>
+    <h2>PIN Değiştirme Zorunlu</h2>
+    <p>Bu hesaba ait geçici PIN ile giriş yapıldı. Devam etmeden önce 6 haneli yeni PIN belirleyin.</p>
+    <div class="field">
+      <label>Mevcut PIN</label>
+      <input id="currentPin" type="password" inputmode="numeric" maxlength="6" placeholder="123456">
+    </div>
+    <div class="field">
+      <label>Yeni PIN</label>
+      <input id="newPin" type="password" inputmode="numeric" maxlength="6" placeholder="654321">
+    </div>
+    <div class="modal-error" id="pinChangeError"></div>
+    <button class="btn btn-accent2" type="button" onclick="App.submitPinChange()">PIN'i Güncelle</button>
   </div>
 </div>
 
@@ -171,7 +241,7 @@
     <div class="ocr-footer">
       <div class="ocr-footer-meta" id="ocrFooterMeta"></div>
       <div class="ocr-footer-actions">
-        <button class="btn btn-ghost" id="ocrGalleryActionBtn" onclick="OCR.openFilePicker()"><span class="material-symbols-outlined ocr-btn-icon">photo_library</span><span class="ocr-btn-label">Fotoğraf Seç</span></button>
+        <button class="btn btn-ghost" id="ocrGalleryAçtionBtn" onclick="OCR.openFilePicker()"><span class="material-symbols-outlined ocr-btn-icon">photo_library</span><span class="ocr-btn-label">Fotoğraf Seç</span></button>
         <button class="btn btn-ghost" id="ocrSwitchCameraBtn" onclick="OCR.switchCamera()"><span class="material-symbols-outlined ocr-btn-icon">flip_camera_ios</span><span class="ocr-btn-label">Kamerayı Değiştir</span></button>
         <button class="btn btn-ghost" id="ocrFocusLockBtn" onclick="OCR.toggleFocusLock()"><span class="material-symbols-outlined ocr-btn-icon">center_focus_strong</span><span class="ocr-btn-label">Odak Kilidi</span></button>
         <button class="btn btn-ghost" id="ocrResetPreviewBtn" onclick="OCR.retryCapture()"><span class="material-symbols-outlined ocr-btn-icon">videocam</span><span class="ocr-btn-label">Canlı Önizleme</span></button>
@@ -188,11 +258,13 @@
 
 <script src="/js/api.js"></script>
 <script src="/js/email.js"></script>
+<script src="/js/current-state.js"></script>
 <script src="/js/components.js"></script>
 <script src="/js/devices.js"></script>
 <script src="/js/search.js"></script>
 <script src="/js/ocr.js"></script>
 <script src="/js/sync.js"></script>
+<script src="/js/approval.js"></script>
 <script src="/js/app.js"></script>
 </body>
 </html>
