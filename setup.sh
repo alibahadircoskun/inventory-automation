@@ -6,7 +6,7 @@ usage() {
 Usage: setup.sh [--enable-web] [--reset-web-env] [--skip-web-service] [--help]
 
 Installs runtime dependencies, installs Node packages, and optionally
-installs the systemd service for Inventory Mail Generator.
+installs the systemd service for Inventory Automation.
 
 Options:
   --enable-web       Enable inventory-mail-generator at boot.
@@ -55,11 +55,11 @@ RUN_WEB_SH="${SCRIPT_DIR}/run_web_service.sh"
 
 if [ ! -f "${PACKAGE_JSON}" ]; then
     echo "Expected package.json not found: ${PACKAGE_JSON}" >&2
-    echo "Run setup.sh from inside the inventory-mail-generator repo." >&2
+    echo "Run setup.sh from inside the inventory-automation repo." >&2
     exit 1
 fi
 
-echo "Installing system dependencies for Inventory Mail Generator..."
+echo "Installing system dependencies for Inventory Automation..."
 
 apt-get update -qq
 apt-get install -y -qq \

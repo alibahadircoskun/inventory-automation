@@ -4,6 +4,13 @@ Internal web app for managing hardware inventory handoffs, Snipe-IT synchronisat
 
 The app runs as a small Express server with a SQLite database, serves a login screen plus editor UI, and integrates with a local Snipe-IT instance for asset and component tracking.
 
+## What this proves
+
+- Turn an internal operations workflow into a usable web tool
+- Integrate application logic with Snipe-IT and approval-based change control
+- Blend backend work, frontend workflow design, OCR integration, and deployment scripting
+- Build around real inventory operations instead of toy CRUD examples
+
 ## Features
 
 - User picker login with role-based access (technician / manager)
@@ -39,7 +46,7 @@ The app runs as a small Express server with a SQLite database, serves a login sc
 ## Quick Start
 
 ```bash
-cd /root/inventory-mail-generator
+cd inventory-automation
 cp .env.example .env
 # fill in SNIPEIT_API_URL, SNIPEIT_API_TOKEN, and AI_API_KEY in .env
 npm install
@@ -66,7 +73,7 @@ If you want the app to keep running after you close the shell, use the bundled `
 Install/update with defaults:
 
 ```bash
-cd /root/inventory-mail-generator
+cd inventory-automation
 sudo bash ./setup.sh
 ```
 
@@ -86,7 +93,7 @@ sudo bash ./setup.sh --skip-web-service
 If dependencies are already installed and you only want to refresh service files:
 
 ```bash
-cd /root/inventory-mail-generator
+cd inventory-automation
 sudo bash ./install_web_service.sh
 ```
 
@@ -119,7 +126,7 @@ sudo journalctl -u inventory-mail-generator -f
 Run without systemd (foreground):
 
 ```bash
-cd /root/inventory-mail-generator
+cd inventory-automation
 sudo bash ./run_web_service.sh
 ```
 
@@ -231,7 +238,7 @@ python3 scripts/import_component_batch.py data/component_batch_2026-04-09.tsv --
 ## Project Layout
 
 ```text
-inventory-mail-generator/
+inventory-automation/
 ├── data/           # Seed inventory JSON and TSV files
 ├── lib/            # Shared server modules (Snipe-IT client, sync, sessions, notifications)
 ├── middleware/     # Auth middleware, PIN checks, role enforcement

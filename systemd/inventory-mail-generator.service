@@ -1,5 +1,5 @@
 [Unit]
-Description=Inventory Mail Generator Web App
+Description=Inventory Automation Web App
 After=network-online.target
 Wants=network-online.target
 

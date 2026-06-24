@@ -5,7 +5,7 @@ usage() {
     cat <<'EOF'
 Usage: install_web_service.sh [--enable] [--disable] [--reset-env] [--no-restart] [--help]
 
-Install/update the inventory-mail-generator systemd unit and environment file.
+Install/update the inventory-mail-generator systemd unit and environment file for Inventory Automation.
 
 Options:
   --enable      Enable service at boot.
