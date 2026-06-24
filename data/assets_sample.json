@@ -1,0 +1,26 @@
+[
+  {
+    "Asset Name": "Lab Hypervisor 01",
+    "Asset Tag": "LAB-001",
+    "Serial": "SAMPLE-SERIAL-001",
+    "Model": "Dell R730",
+    "Category": "Server",
+    "Status": "In Use",
+    "Checked Out To": "Infrastructure Team",
+    "Location": "Lab Rack A",
+    "Purchase Cost": "",
+    "Current Value": ""
+  },
+  {
+    "Asset Name": "Spare Access Switch",
+    "Asset Tag": "LAB-002",
+    "Serial": "SAMPLE-SERIAL-002",
+    "Model": "Cisco Catalyst 2960X",
+    "Category": "Network",
+    "Status": "In Stock",
+    "Checked Out To": "",
+    "Location": "Storage Shelf 2",
+    "Purchase Cost": "",
+    "Current Value": ""
+  }
+]

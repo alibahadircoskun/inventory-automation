@@ -4,3 +4,8 @@ certs/
 .env
 backups/
 component_batch_import.local.json
+data/*.local.json
+data/*.local.tsv
+data/snipe_import_report.local.json
+scripts/component-batch-*.json
+scripts/__pycache__/

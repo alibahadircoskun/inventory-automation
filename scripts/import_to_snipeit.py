@@ -478,14 +478,21 @@ def import_components(
 
 def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
+
+    def default_data_path(local_name: str, sample_name: str) -> Path:
+        local_path = repo_root / "data" / local_name
+        if local_path.exists():
+            return local_path
+        return repo_root / "data" / sample_name
+
     parser = argparse.ArgumentParser(description="Import assets and components JSON into Snipe-IT.")
     parser.add_argument("--api-base", default="http://127.0.0.1:8000/api/v1")
     parser.add_argument("--token-file", default="/opt/snipeit/.automation-api-token")
-    parser.add_argument("--assets", default=str(repo_root / "data" / "assets_all.json"))
-    parser.add_argument("--components", default=str(repo_root / "data" / "components_all.json"))
+    parser.add_argument("--assets", default=str(default_data_path("assets_all.local.json", "assets_sample.json")))
+    parser.add_argument("--components", default=str(default_data_path("components_all.local.json", "components_sample.json")))
     parser.add_argument(
         "--report",
-        default=str(repo_root / "data" / "snipe_import_report.json"),
+        default=str(repo_root / "data" / "snipe_import_report.local.json"),
     )
     args = parser.parse_args()
 

@@ -22,7 +22,7 @@ except ModuleNotFoundError as exc:
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_INPUT_PATH = REPO_ROOT / "data" / "component_batch_2026-04-09.tsv"
+DEFAULT_INPUT_PATH = REPO_ROOT / "data" / "component_batch_sample.tsv"
 SETTINGS_PATH = REPO_ROOT / "component_batch_import.local.json"
 DEFAULT_CATEGORY = "SAS Disk"
 DEFAULT_LOCATION = "IN DEPOT"

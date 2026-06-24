@@ -159,10 +159,20 @@ function createLegacyBaseSchema(db) {
   }
 
   // Import inventory data if tables are empty
+  const resolveSeedPath = (candidates) => {
+    for (const name of candidates) {
+      const candidate = path.join(__dirname, 'data', name);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  };
+
   const assetCount = db.prepare('SELECT COUNT(*) as c FROM inventory_assets').get().c;
   if (assetCount === 0) {
-    const assetsPath = path.join(__dirname, 'data', 'assets_all.json');
-    if (fs.existsSync(assetsPath)) {
+    const assetsPath = resolveSeedPath(['assets_all.local.json', 'assets_sample.json']);
+    if (assetsPath) {
       const assets = JSON.parse(fs.readFileSync(assetsPath, 'utf8'));
       const ins = db.prepare(`INSERT INTO inventory_assets (asset_name, asset_tag, serial, model, category, status, checked_out_to, location, search_text)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -181,8 +191,8 @@ function createLegacyBaseSchema(db) {
 
   const compCount = db.prepare('SELECT COUNT(*) as c FROM inventory_components').get().c;
   if (compCount === 0) {
-    const compsPath = path.join(__dirname, 'data', 'components_all.json');
-    if (fs.existsSync(compsPath)) {
+    const compsPath = resolveSeedPath(['components_all.local.json', 'components_sample.json']);
+    if (compsPath) {
       const comps = JSON.parse(fs.readFileSync(compsPath, 'utf8'));
       const ins = db.prepare(`INSERT INTO inventory_components (name, serial, category, total, remaining, location, search_text)
         VALUES (?, ?, ?, ?, ?, ?, ?)`);

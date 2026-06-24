@@ -6,9 +6,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/root/inventory-mail-generator
+WorkingDirectory=/path/to/inventory-automation
 EnvironmentFile=-/etc/default/inventory-mail-generator
-ExecStart=/root/inventory-mail-generator/run_web_service.sh
+ExecStart=/path/to/inventory-automation/run_web_service.sh
 Restart=always
 RestartSec=2
 StandardOutput=journal

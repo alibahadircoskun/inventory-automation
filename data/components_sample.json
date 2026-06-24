@@ -1,0 +1,26 @@
+[
+  {
+    "Name": "480GB SATA SSD",
+    "Serial": "SAMPLE-COMP-001",
+    "Category": "Storage",
+    "Total": 4,
+    "Remaining": 3,
+    "Min. QTY": "1",
+    "Location": "Lab Rack A",
+    "Order Number": "",
+    "Purchase Date": "",
+    "Purchase Cost": ""
+  },
+  {
+    "Name": "16GB DDR4 ECC DIMM",
+    "Serial": "SAMPLE-COMP-002",
+    "Category": "Memory",
+    "Total": 8,
+    "Remaining": 6,
+    "Min. QTY": "2",
+    "Location": "Storage Shelf 2",
+    "Order Number": "",
+    "Purchase Date": "",
+    "Purchase Cost": ""
+  }
+]

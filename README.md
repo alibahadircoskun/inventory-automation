@@ -170,7 +170,7 @@ On startup the app will:
 1. Create `db/inventory.db` if it does not exist.
 2. Create the required tables for users, sessions, devices, components, units, events, and notifications.
 3. Seed the local user list.
-4. Import inventory data from `data/assets_all.json` and `data/components_all.json` if the inventory tables are empty.
+4. Import inventory data from `data/assets_all.local.json` / `data/components_all.local.json` when present, otherwise fall back to the bundled sample data files.
 5. Generate `certs/key.pem` and `certs/cert.pem` if no local certificate exists yet.
 
 These generated paths are already ignored by Git:
@@ -180,6 +180,21 @@ These generated paths are already ignored by Git:
 - `.env`
 - `node_modules/`
 - `backups/`
+- `data/*.local.json`
+- `data/*.local.tsv`
+- `scripts/component-batch-*.json`
+
+The repository ships with sample inventory files for demo and UI testing:
+
+- `data/assets_sample.json`
+- `data/components_sample.json`
+- `data/component_batch_sample.tsv`
+
+For private or production-like data, use ignored local files instead:
+
+- `data/assets_all.local.json`
+- `data/components_all.local.json`
+- `data/component_batch.local.tsv`
 
 ## Authentication and Roles
 
@@ -232,7 +247,7 @@ Bulk import tools are in `scripts/`:
 Example dry run:
 
 ```bash
-python3 scripts/import_component_batch.py data/component_batch_2026-04-09.tsv --dry-run
+python3 scripts/import_component_batch.py data/component_batch_sample.tsv --dry-run
 ```
 
 ## Project Layout
